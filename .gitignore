@@ -1,0 +1,38 @@
+# Repo specific:
+/cache
+/jahs_bench_data
+/yahpo_bench_data
+
+# General:
+.DS_Store
+.idea
+.vscode
+.cache
+venv/
+__pycache__/
+.pytest_cache/
+
+# Build:
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+
+temp.py
+
+temp*
+
+/smac3_output

@@ -1,0 +1,15 @@
+benchmark_identifier,tuner,sampler,confidence_level,estimator_architecture,sampler_n_quantiles,sampler_adapter,tuner_searcher_tuning_framework,n_pre_conformal_trials,runtime,rank,best_performance,rank_lower,rank_upper,best_performance_lower,best_performance_upper
+lcbench,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,250,2.0,-89.7641,2.0,2.0,-89.7641,-89.7641
+lcbench,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,251,1.5,-91.2145,1.5,1.5,-91.2145,-91.2145
+lcbench,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,257,2.0,-83.3992,2.0,2.0,-83.3992,-83.3992
+lcbench,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,258,1.0,-91.3902,1.0,1.0,-91.3902,-91.3902
+lcbench,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,259,1.0,-91.3902,1.0,1.0,-91.3902,-91.3902
+lcbench,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,250,1.0,-91.2145,1.0,1.0,-91.2145,-91.2145
+lcbench,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,251,1.5,-91.2145,1.5,1.5,-91.2145,-91.2145
+lcbench,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,257,1.0,-89.9583,1.0,1.0,-89.9583,-89.9583
+lcbench,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,258,2.0,-89.9583,2.0,2.0,-89.9583,-89.9583
+lcbench,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,259,2.0,-89.9583,2.0,2.0,-89.9583,-89.9583
+nahs201,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,47,1.0,-86.4521,1.0,1.0,-86.4521,-86.4521
+nahs201,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,50,1.0,-84.0319,1.0,1.0,-84.0319,-84.0319
+nahs201,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,47,2.0,-77.4891,2.0,2.0,-77.4891,-77.4891
+nahs201,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,50,2.0,-79.0829,2.0,2.0,-79.0829,-79.0829
