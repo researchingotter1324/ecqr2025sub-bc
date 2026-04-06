@@ -9,7 +9,6 @@ from hpobench.tune import (
     calculate_breach_status,
     calculate_winkler_components,
 )
-from hpobench.syne_tune_integration import syne_tune_cqr_tune
 from ccqr_optimization.selection.acquisition import (
     QuantileConformalSearcher,
     LowerBoundSampler,
@@ -20,7 +19,6 @@ from hpobench.config.config_types import (
     SkOptModel,
     OptunaModel,
     SMACModel,
-    SyneTuneModel,
     CustomGPModel,
 )
 
@@ -341,33 +339,6 @@ def test_smac_tune_reproducibility(
 
 
 @pytest.mark.slow
-def test_syne_tune_cqr_tune_reproducibility(
-    small_param_space, performance_generator, warm_start_configs
-):
-    result1 = syne_tune_cqr_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=SyneTuneModel(backend="syne_tune_cqr", searcher="CQR-TS"),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    result2 = syne_tune_cqr_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=SyneTuneModel(backend="syne_tune_cqr", searcher="CQR-TS"),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    for i in range(len(result1)):
-        assert result1.iloc[i]["performance"] == result2.iloc[i]["performance"]
-        assert result1.iloc[i]["configurations"] == result2.iloc[i]["configurations"]
-
-
-@pytest.mark.slow
 @pytest.mark.parametrize("sampler", ["EI", "TS", "log-EI", "UCB", "OBS"])
 def test_gp_opt_tune_reproducibility(
     small_param_space, performance_generator, warm_start_configs, sampler
@@ -402,21 +373,6 @@ def test_smac_tune_core_functionality(
         raw_params=small_param_space,
         performance_generator=performance_generator,
         tuner_model=SMACModel(backend="smac", searcher="SMAC-EI"),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    _verify_tune_core_functionality(result_df, N_TRIALS, warm_start_configs)
-
-
-def test_syne_tune_cqr_tune_core_functionality(
-    small_param_space, performance_generator, warm_start_configs
-):
-    result_df = syne_tune_cqr_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=SyneTuneModel(backend="syne_tune_cqr", searcher="CQR-TS"),
         warm_start_configs=warm_start_configs,
         random_state=RANDOM_STATE,
         n_trials=N_TRIALS,

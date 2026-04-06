@@ -36,7 +36,6 @@ from hpobench.tune import tune
 from hpobench.report.analyze import analyze_main_benchmark
 
 logger = logging.getLogger(__name__)
-os.environ["SYNETUNE_FOLDER"] = "cache/syne-tune"
 
 aliases = Aliases()
 
@@ -214,7 +213,7 @@ def run_main_benchmark(
         - 'dataset': Specific dataset instance identifier
         - 'tuner': Tuner configuration identifier
         - 'repetition': Experimental repetition number (1-indexed)
-        - 'searcher_tuning_framework': Framework used (ccqr_optimization, optuna, syne_tune)
+        - 'searcher_tuning_framework': Framework used (ccqr_optimization, optuna)
         - 'estimator_architecture': Architecture for ccqr_optimization tuners (empty for others)
         - 'confidence_level': Confidence interval width for ccqr_optimization (empty for others)
         - 'sampler': Sampling strategy class name for ccqr_optimization (empty for others)

@@ -33,7 +33,6 @@ except ImportError:
     )
 from copy import deepcopy
 from functools import partial
-from hpobench.syne_tune_integration import syne_tune_cqr_tune
 from ConfigSpace import (
     ConfigurationSpace,
     Configuration,
@@ -1166,10 +1165,6 @@ def tune(
         )
     elif tuner_config.tuner.backend == "skopt":
         history = skopt_tune(
-            **shared_kwargs,
-        )
-    elif tuner_config.tuner.backend == "syne_tune_cqr":
-        history = syne_tune_cqr_tune(
             **shared_kwargs,
         )
     elif tuner_config.tuner.backend == "smac":

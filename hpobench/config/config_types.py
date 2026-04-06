@@ -91,20 +91,6 @@ class OptunaModel(TunerModelConfig):
     ]
 
 
-class SyneTuneModel(TunerModelConfig):
-    """Configuration for Syne Tune CQR-based hyperparameter optimization.
-
-    Args:
-        backend: Must be "syne_tune_cqr".
-        searcher: Syne Tune CQR search algorithm.
-    """
-
-    backend: Literal["syne_tune_cqr"]
-    searcher: Literal[
-        "CQR-TS",
-    ]
-
-
 class SMACModel(TunerModelConfig):
     """Configuration for SMAC-based hyperparameter optimization.
 
@@ -177,7 +163,6 @@ class TunerConfig(BaseModel):
 
     tuner: Union[
         OptunaModel,
-        SyneTuneModel,
         SMACModel,
         CustomGPModel,
         SkOptModel,
