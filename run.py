@@ -34,12 +34,12 @@ run_sections = {
     "run_coverage_analysis": False,
     "run_sampler_variation_analysis": False,
     "run_architecture_variation_analysis": False,
-    "run_external_tuning_analysis": False,
+    "run_external_tuning_analysis": True,
     "run_heteroscedastic_external_tuning_analysis": False,
     "run_skew_external_tuning_analysis": False,
     "run_preconformal_comparison_analysis": False,
-    "run_static_analysis": True,
-    "run_quantile_count_comparison": True,
+    "run_static_analysis": False,
+    "run_quantile_count_comparison": False,
     "run_search_tuning_effect_comparison": False,
 }
 
@@ -66,6 +66,7 @@ def main():
         logger.info("Starting coverage analysis")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-L"],
                 tuning_configurations=COVERAGE_ANALYSIS_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_coverage_warm_starts,
@@ -91,6 +92,7 @@ def main():
         logger.info("Starting sampler variation analysis")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-L"],
                 tuning_configurations=SAMPLER_VARIATION_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
@@ -115,6 +117,7 @@ def main():
         logger.info("Starting architecture variation analysis")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-L"],
                 tuning_configurations=ARCHITECTURE_VARIATION_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
@@ -143,8 +146,9 @@ def main():
         logger.info("Starting external tuning analysis")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=[
-                    "jahs201",
+                    # "jahs201",
                     "LCBench-L",
                     "rbv2_aknn-L",
                 ],
@@ -176,6 +180,7 @@ def main():
         logger.info("Starting heteroscedastic external tuning analysis")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-H", "rbv2_aknn-H"],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
@@ -205,6 +210,7 @@ def main():
         logger.info("Starting skew external tuning analysis")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-A", "rbv2_aknn-A"],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
@@ -234,6 +240,7 @@ def main():
         logger.info("Starting pre-conformal comparison analysis")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-L"],
                 tuning_configurations=PRECONFORMAL_COMPARISON_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
@@ -258,6 +265,7 @@ def main():
         logger.info("Starting quantile count comparison")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-L"],
                 tuning_configurations=QUANTILE_COUNT_VARIATION_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
@@ -282,6 +290,7 @@ def main():
         logger.info("Starting search tuning effect comparison")
         try:
             run_and_analyze_main_benchmark(
+                parallelize=True,
                 benchmarks=["LCBench-L"],
                 tuning_configurations=SEARCH_TUNING_EFFECT_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,

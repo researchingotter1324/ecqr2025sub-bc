@@ -173,9 +173,9 @@ LIMITED_ARCHITECTURE_N_QUANTILES = 6
 LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
-            "qgp",
+            # "qgp",
             "qgbm",
-            "qens5",
+            # "qens5",
         ],
         samplers=[
             ThompsonSampler(

@@ -1,4 +1,6 @@
 import pandas as pd
+import concurrent.futures
+import multiprocessing
 from datetime import datetime
 import os
 import logging
@@ -170,227 +172,224 @@ def load_experiment_configs(
     return experiment_configs
 
 
+def _process_single_experiment_config(
+    experiment_config: ExperimentConfig,
+    n_repetitions: int,
+    base_random_state: int,
+) -> pd.DataFrame:
+    dataset_name = experiment_config.dataset_identifier
+    logger.info(f"Worker | Dataset: {dataset_name}")
+
+    logger.info(f"Worker | Initializing generator for dataset: {dataset_name}...")
+    experiment_config.objective_function.initialize()
+
+    logger.info(
+        f"Worker | Generating {experiment_config.n_warm_starts} warm start configurations for dataset: {dataset_name}"
+    )
+    # NOTE: Warm starts are identical per repetition, so all models
+    # will have the same starting hyperparameter configurations, but
+    # a new set of warm starts needs to be generated per dataset and
+    # per repetition.
+    warm_start_configs_per_repetition = []
+    for repetition in range(n_repetitions):
+        consistent_warm_starts = generate_hyperparameter_combinations(
+            params=experiment_config.search_space,
+            n_combinations=experiment_config.n_warm_starts,
+            random_state=base_random_state + repetition,
+        )
+        warm_start_configs = []
+        for combination in consistent_warm_starts:
+            performance = experiment_config.objective_function.predict(configuration=combination)
+            warm_start_configs.append((combination, performance))
+        warm_start_configs_per_repetition.append(warm_start_configs)
+    logger.info(
+        f"Worker | Generated {len(warm_start_configs_per_repetition[0])} warm start configurations."
+    )
+
+    dataset_benchmark_data = pd.DataFrame()
+
+    for tuner in experiment_config.tuner_configurations:
+        logger.info(f"Worker | Tuner: {tuner}")
+        for repetition in range(n_repetitions):
+            logger.info(f"Worker | Repetition: {repetition}")
+            tune_start = datetime.now()
+
+            # Grab the warm start configurations for this repetition (shared by all tuners):
+            historical_performance = tune(
+                performance_generator=experiment_config.objective_function,
+                tuner_config=tuner,
+                n_trials=experiment_config.n_trials,
+                timeout=experiment_config.timeout,
+                params=experiment_config.search_space,
+                warm_start_configs=warm_start_configs_per_repetition[repetition],
+                random_state=base_random_state + repetition,
+            )
+
+            historical_performance = add_runtime(
+                experiment_log=historical_performance,
+                tune_start=tune_start,
+                performance_generator=experiment_config.objective_function,
+                n_warm_starts=len(warm_start_configs_per_repetition[repetition]),
+            )
+
+            aliased_benchmark_identifier = (
+                aliases.benchmark_aliases[experiment_config.benchmark_identifier]
+                if experiment_config.benchmark_identifier
+                in aliases.benchmark_aliases
+                else experiment_config.benchmark_identifier
+            )
+            historical_performance[
+                "benchmark_identifier"
+            ] = aliased_benchmark_identifier
+            historical_performance["dataset"] = dataset_name
+            historical_performance["tuner"] = tuner.tuner_identifier
+            historical_performance["repetition"] = repetition + 1
+            historical_performance[
+                "searcher_tuning_framework"
+            ] = tuner.searcher_tuning_framework
+
+            if tuner.tuner.backend == "ccqr_optimization":
+                sampler_name = tuner.tuner.searcher.sampler.__class__.__name__
+
+                if hasattr(tuner.tuner.searcher.sampler, "interval_width"):
+                    confidence_level = str(
+                        tuner.tuner.searcher.sampler.interval_width
+                    )
+                else:
+                    confidence_level = ""
+
+                estimator_architecture = (
+                    tuner.tuner.searcher.quantile_estimator_architecture
+                )
+
+                if hasattr(tuner.tuner.searcher, "n_pre_conformal_trials"):
+                    n_pre_conformal_trials = (
+                        tuner.tuner.searcher.n_pre_conformal_trials
+                    )
+                else:
+                    n_pre_conformal_trials = ""
+
+                if hasattr(tuner.tuner.searcher.sampler, "n_quantiles"):
+                    sampler_n_quantiles = tuner.tuner.searcher.sampler.n_quantiles
+                else:
+                    sampler_n_quantiles = ""
+
+                if hasattr(tuner.tuner.searcher.sampler, "adapter"):
+                    if tuner.tuner.searcher.sampler.adapter is None:
+                        sampler_adapter = "None"
+                    else:
+                        sampler_adapter = str(tuner.tuner.searcher.sampler.adapter)
+                else:
+                    sampler_adapter = ""
+
+                if tuner.searcher_tuning_framework is None:
+                    tuner_searcher_tuning_framework = "None"
+                else:
+                    tuner_searcher_tuning_framework = str(
+                        tuner.searcher_tuning_framework
+                    )
+            else:
+                # NOTE: Use "" instead of None or NaN to avoid bad groupby behavior
+                sampler_name = ""
+                confidence_level = ""
+                estimator_architecture = ""
+                n_pre_conformal_trials = ""
+                sampler_n_quantiles = ""
+                sampler_adapter = ""
+                tuner_searcher_tuning_framework = ""
+
+            aliased_estimator_architecture = (
+                aliases.architecture_aliases[estimator_architecture]
+                if estimator_architecture in aliases.architecture_aliases
+                else estimator_architecture
+            )
+            aliased_sampler_name = (
+                aliases.sampler_aliases[sampler_name]
+                if sampler_name in aliases.sampler_aliases
+                else sampler_name
+            )
+            if tuner.tuner.backend == "ccqr_optimization":
+                if sampler_name == "ThompsonSampler":
+                    if tuner.tuner.searcher.sampler.enable_optimistic_sampling:
+                        aliased_sampler_name = "OBS"
+            historical_performance[
+                "estimator_architecture"
+            ] = aliased_estimator_architecture
+            historical_performance["confidence_level"] = confidence_level
+            historical_performance["sampler"] = aliased_sampler_name
+            historical_performance[
+                "n_pre_conformal_trials"
+            ] = n_pre_conformal_trials
+            historical_performance["sampler_n_quantiles"] = sampler_n_quantiles
+            historical_performance["sampler_adapter"] = sampler_adapter
+            historical_performance[
+                "tuner_searcher_tuning_framework"
+            ] = tuner_searcher_tuning_framework
+
+            dataset_benchmark_data = pd.concat(
+                [dataset_benchmark_data, historical_performance], axis=0
+            )
+
+    # Free up memory after processing each experiment config:
+    experiment_config.objective_function = None
+    gc.collect()
+
+    return dataset_benchmark_data
+
+
 def run_main_benchmark(
     experiment_configs: list[ExperimentConfig],
     n_repetitions: int,
     cache_path: str,
     run_start_str: str,
     base_random_state: Optional[int] = None,
+    parallelize: bool = False,
 ) -> pd.DataFrame:
-    """Execute the core hyperparameter optimization benchmark experiments.
-
-    This function runs the main experimental loop that evaluates multiple HPO algorithms
-    across different datasets and repetitions. For each experiment configuration (which
-    contains a single dataset), it:
-    1. Initializes the objective function (surrogate model that returns performance of
-        dataset at passed hyperparameters)
-    2. Generates consistent warm start configurations (one set of configurations per repetition)
-    3. Runs each tuner configuration for the specified number of trials
-    4. Collects performance metrics, runtime data, and tuner-specific metadata
-
-    The function handles both ccqr_optimization-based tuners (with detailed conformal prediction
-    metadata) and external tuning frameworks (Optuna, Sk Opt, etc.) with appropriate
-    metadata extraction for downstream analysis.
-
-    Args:
-        experiment_configs: List of pre-configured experiment instances, each containing
-            a specific dataset, search space, objective function, and tuning parameters.
-        n_repetitions: Number of independent experimental repetitions per tuner-dataset
-            combination to enable statistical significance testing and confidence intervals.
-        base_random_state: Base seed for reproducible random number generation across
-            all experiments. Each repetition uses base_random_state + repetition_index.
-        cache_path: Root directory path for saving experimental data, logs, and
-            intermediate results. Must be writable and have sufficient disk space.
-        run_start_str: Unique timestamp-based identifier for this experimental run,
-            used to organize results and prevent conflicts between concurrent runs.
-
-    Returns:
-        DataFrame containing complete experimental results with columns:
-        - 'trial': Trial number within each tuner run
-        - 'performance': Objective function value achieved
-        - 'runtime': Wall-clock time for hyperparameter evaluation
-        - 'benchmark_identifier': Name of the benchmark dataset
-        - 'dataset': Specific dataset instance identifier
-        - 'tuner': Tuner configuration identifier
-        - 'repetition': Experimental repetition number (1-indexed)
-        - 'searcher_tuning_framework': Framework used (ccqr_optimization, optuna)
-        - 'estimator_architecture': Architecture for ccqr_optimization tuners (empty for others)
-        - 'confidence_level': Confidence interval width for ccqr_optimization (empty for others)
-        - 'sampler': Sampling strategy class name for ccqr_optimization (empty for others)
-        - 'n_pre_conformal_trials': Pre-conformal trials for ccqr_optimization (empty for others)
-        - 'sampler_n_quantiles': Number of quantiles used by sampler for ccqr_optimization (empty for others)
-        - 'sampler_adapter': Adapter used by sampler for ccqr_optimization ("None" if None, empty for others)
-        - 'tuner_searcher_tuning_framework': Searcher tuning framework from tuner config ("None" if None, empty for others)
-    """
+    """Execute the core hyperparameter optimization benchmark experiments."""
     logger.info("Running HPO benchmark...")
 
     incremental_data_path = os.path.join(cache_path, f"data/{run_start_str}")
     os.makedirs(incremental_data_path, exist_ok=True)
+    incremental_csv_path = os.path.join(incremental_data_path, "incremental_raw_benchmark_data.csv")
 
     raw_benchmark_data = pd.DataFrame()
-    for experiment_config in experiment_configs:
-        dataset_name = experiment_config.dataset_identifier
-        logger.info(f"Loop Level | Dataset: {dataset_name}")
 
-        logger.info(f"Initializing generator for dataset: {dataset_name}...")
-        experiment_config.objective_function.initialize()
-
-        logger.info(
-            f"Generating {experiment_config.n_warm_starts} warm start configurations for dataset: {dataset_name}"
-        )
-        # NOTE: Warm starts are identical per repetition, so all models
-        # will have the same starting hyperparameter configurations, but
-        # a new set of warm starts needs to be generated per dataset and
-        # per repetition.
-        warm_start_configs_per_repetition = []
-        for repetition in range(n_repetitions):
-            consistent_warm_starts = generate_hyperparameter_combinations(
-                params=experiment_config.search_space,
-                n_combinations=experiment_config.n_warm_starts,
-                random_state=base_random_state + repetition,
+    if parallelize:
+        max_workers = multiprocessing.cpu_count()
+        logger.info(f"Running in parallel across {len(experiment_configs)} datasets using {max_workers} workers.")
+        
+        with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    _process_single_experiment_config,
+                    experiment_config=config,
+                    n_repetitions=n_repetitions,
+                    base_random_state=base_random_state
+                ): config
+                for config in experiment_configs
+            }
+            
+            for future in concurrent.futures.as_completed(futures):
+                config = futures[future]
+                dataset_df = future.result()
+                raw_benchmark_data = pd.concat([raw_benchmark_data, dataset_df], axis=0)
+                
+                write_header = not os.path.exists(incremental_csv_path)
+                dataset_df.to_csv(incremental_csv_path, mode='a', header=write_header, index=False)
+                logger.info(f"Successfully processed and saved dataset: {config.dataset_identifier}")
+    else:
+        logger.info("Running sequentially.")
+        for experiment_config in experiment_configs:
+            dataset_df = _process_single_experiment_config(
+                experiment_config=experiment_config,
+                n_repetitions=n_repetitions,
+                base_random_state=base_random_state
             )
-            warm_start_configs = []
-            for combination in consistent_warm_starts:
-                performance = experiment_config.objective_function.predict(combination)
-                warm_start_configs.append((combination, performance))
-            warm_start_configs_per_repetition.append(warm_start_configs)
-        logger.info(
-            f"Generated {len(warm_start_configs_per_repetition[0])} warm start configurations."
-        )
-
-        for tuner in experiment_config.tuner_configurations:
-            logger.info(f"Loop Level | Tuner: {tuner}")
-            for repetition in range(n_repetitions):
-                logger.info(f"Loop Level | Repetition: {repetition}")
-                tune_start = datetime.now()
-
-                historical_performance = tune(
-                    performance_generator=experiment_config.objective_function,
-                    tuner_config=tuner,
-                    n_trials=experiment_config.n_trials,
-                    timeout=experiment_config.timeout,
-                    params=experiment_config.search_space,
-                    # Grab the warm start configurations for this repetition (shared by all tuners):
-                    warm_start_configs=warm_start_configs_per_repetition[repetition],
-                    random_state=base_random_state + repetition,
-                )
-
-                historical_performance = add_runtime(
-                    experiment_log=historical_performance,
-                    tune_start=tune_start,
-                    performance_generator=experiment_config.objective_function,
-                    n_warm_starts=len(warm_start_configs_per_repetition[repetition]),
-                )
-
-                aliased_benchmark_identifier = (
-                    aliases.benchmark_aliases[experiment_config.benchmark_identifier]
-                    if experiment_config.benchmark_identifier
-                    in aliases.benchmark_aliases
-                    else experiment_config.benchmark_identifier
-                )
-                historical_performance[
-                    "benchmark_identifier"
-                ] = aliased_benchmark_identifier
-                historical_performance["dataset"] = dataset_name
-                historical_performance["tuner"] = tuner.tuner_identifier
-                historical_performance["repetition"] = repetition + 1
-                historical_performance[
-                    "searcher_tuning_framework"
-                ] = tuner.searcher_tuning_framework
-
-                if tuner.tuner.backend == "ccqr_optimization":
-                    sampler_name = tuner.tuner.searcher.sampler.__class__.__name__
-
-                    if hasattr(tuner.tuner.searcher.sampler, "interval_width"):
-                        confidence_level = str(
-                            tuner.tuner.searcher.sampler.interval_width
-                        )
-                    else:
-                        confidence_level = ""
-
-                    estimator_architecture = (
-                        tuner.tuner.searcher.quantile_estimator_architecture
-                    )
-
-                    if hasattr(tuner.tuner.searcher, "n_pre_conformal_trials"):
-                        n_pre_conformal_trials = (
-                            tuner.tuner.searcher.n_pre_conformal_trials
-                        )
-                    else:
-                        n_pre_conformal_trials = ""
-
-                    if hasattr(tuner.tuner.searcher.sampler, "n_quantiles"):
-                        sampler_n_quantiles = tuner.tuner.searcher.sampler.n_quantiles
-                    else:
-                        sampler_n_quantiles = ""
-
-                    if hasattr(tuner.tuner.searcher.sampler, "adapter"):
-                        if tuner.tuner.searcher.sampler.adapter is None:
-                            sampler_adapter = "None"
-                        else:
-                            sampler_adapter = str(tuner.tuner.searcher.sampler.adapter)
-                    else:
-                        sampler_adapter = ""
-
-                    if tuner.searcher_tuning_framework is None:
-                        tuner_searcher_tuning_framework = "None"
-                    else:
-                        tuner_searcher_tuning_framework = str(
-                            tuner.searcher_tuning_framework
-                        )
-                else:
-                    # NOTE: Use "" instead of None or NaN to avoid bad groupby behavior
-                    sampler_name = ""
-                    confidence_level = ""
-                    estimator_architecture = ""
-                    n_pre_conformal_trials = ""
-                    sampler_n_quantiles = ""
-                    sampler_adapter = ""
-                    tuner_searcher_tuning_framework = ""
-
-                aliased_estimator_architecture = (
-                    aliases.architecture_aliases[estimator_architecture]
-                    if estimator_architecture in aliases.architecture_aliases
-                    else estimator_architecture
-                )
-                aliased_sampler_name = (
-                    aliases.sampler_aliases[sampler_name]
-                    if sampler_name in aliases.sampler_aliases
-                    else sampler_name
-                )
-                if tuner.tuner.backend == "ccqr_optimization":
-                    if sampler_name == "ThompsonSampler":
-                        if tuner.tuner.searcher.sampler.enable_optimistic_sampling:
-                            aliased_sampler_name = "OBS"
-                historical_performance[
-                    "estimator_architecture"
-                ] = aliased_estimator_architecture
-                historical_performance["confidence_level"] = confidence_level
-                historical_performance["sampler"] = aliased_sampler_name
-                historical_performance[
-                    "n_pre_conformal_trials"
-                ] = n_pre_conformal_trials
-                historical_performance["sampler_n_quantiles"] = sampler_n_quantiles
-                historical_performance["sampler_adapter"] = sampler_adapter
-                historical_performance[
-                    "tuner_searcher_tuning_framework"
-                ] = tuner_searcher_tuning_framework
-
-                raw_benchmark_data = pd.concat(
-                    [raw_benchmark_data, historical_performance], axis=0
-                )
-
-                data_path = os.path.join(cache_path, f"data/{run_start_str}")
-                if not os.path.exists(data_path):
-                    os.makedirs(data_path)
-                raw_benchmark_data.to_csv(
-                    os.path.join(data_path, "incremental_raw_benchmark_data.csv"),
-                    index=False,
-                )
-
-        # Free up memory after processing each experiment config:
-        experiment_config.objective_function = None
-        gc.collect()
+            raw_benchmark_data = pd.concat([raw_benchmark_data, dataset_df], axis=0)
+            
+            write_header = not os.path.exists(incremental_csv_path)
+            dataset_df.to_csv(incremental_csv_path, mode='a', header=write_header, index=False)
+            logger.info(f"Successfully processed and saved dataset: {experiment_config.dataset_identifier}")
 
     final_data_path = os.path.join(cache_path, f"data/{run_start_str}")
     os.makedirs(final_data_path, exist_ok=True)
@@ -400,7 +399,6 @@ def run_main_benchmark(
         f"Final raw benchmark data saved to {final_filename} ({len(raw_benchmark_data)} rows)."
     )
     return raw_benchmark_data
-
 
 def run_and_analyze_main_benchmark(
     benchmarks: list[
@@ -445,6 +443,7 @@ def run_and_analyze_main_benchmark(
     starting_coverage_trial: Optional[int] = None,
     n_repetitions: int = 10,
     datasets_per_benchmark: Optional[list[list[str]]] = None,
+    parallelize: bool = False,
 ) -> pd.DataFrame:
     """
     Complete end-to-end hyperparameter optimization benchmark pipeline with analysis.
@@ -527,6 +526,7 @@ def run_and_analyze_main_benchmark(
         base_random_state=base_random_state,
         cache_path=cache_path,
         run_start_str=run_start_str,
+        parallelize=parallelize,
     )
 
     analyze_main_benchmark(
