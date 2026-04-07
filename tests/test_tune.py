@@ -3,9 +3,7 @@ import pandas as pd
 from hpobench.tune import (
     optuna_tune,
     ccqr_optimization_tune,
-    skopt_tune,
     smac_tune,
-    gp_opt_tune,
     calculate_breach_status,
     calculate_winkler_components,
 )
@@ -16,10 +14,8 @@ from ccqr_optimization.selection.acquisition import (
 )
 from hpobench.config.config_types import (
     CCQRModel,
-    SkOptModel,
     OptunaModel,
     SMACModel,
-    CustomGPModel,
 )
 
 N_TRIALS = 40
@@ -184,38 +180,6 @@ def test_ccqr_optimization_tune_reproducibility(
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("sampler", ["GBRT", "RF", "GP"])
-def test_skopt_tune_reproducibility(
-    small_param_space, performance_generator, warm_start_configs, sampler
-):
-    result1 = skopt_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=SkOptModel(backend="skopt", searcher=sampler),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    result2 = skopt_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=SkOptModel(backend="skopt", searcher=sampler),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    for i in range(len(result1)):
-        assert result1.iloc[i]["performance"] == result2.iloc[i]["performance"]
-        for key in result1.iloc[i]["configurations"]:
-            assert (
-                result1.iloc[i]["configurations"][key]
-                == result2.iloc[i]["configurations"][key]
-            )
-
-
-@pytest.mark.slow
 def test_ccqr_optimization_generates_breach_intervals(
     small_param_space, performance_generator, warm_start_configs
 ):
@@ -296,21 +260,6 @@ def test_ccqr_optimization_tune_core_functionality(
     _verify_tune_core_functionality(result_df, N_TRIALS, warm_start_configs)
 
 
-def test_skopt_tune_core_functionality(
-    small_param_space, performance_generator, warm_start_configs
-):
-    result_df = skopt_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=SkOptModel(backend="skopt", searcher="GP"),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    _verify_tune_core_functionality(result_df, N_TRIALS, warm_start_configs)
-
-
 @pytest.mark.slow
 def test_smac_tune_reproducibility(
     small_param_space, performance_generator, warm_start_configs
@@ -338,34 +287,6 @@ def test_smac_tune_reproducibility(
         assert result1.iloc[i]["configurations"] == result2.iloc[i]["configurations"]
 
 
-@pytest.mark.slow
-@pytest.mark.parametrize("sampler", ["EI", "TS", "log-EI", "UCB", "OBS"])
-def test_gp_opt_tune_reproducibility(
-    small_param_space, performance_generator, warm_start_configs, sampler
-):
-    result1 = gp_opt_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=CustomGPModel(backend="gp_opt", searcher=sampler),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    result2 = gp_opt_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=CustomGPModel(backend="gp_opt", searcher=sampler),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    for i in range(len(result1)):
-        assert result1.iloc[i]["performance"] == result2.iloc[i]["performance"]
-        assert result1.iloc[i]["configurations"] == result2.iloc[i]["configurations"]
-
-
 def test_smac_tune_core_functionality(
     small_param_space, performance_generator, warm_start_configs
 ):
@@ -373,21 +294,6 @@ def test_smac_tune_core_functionality(
         raw_params=small_param_space,
         performance_generator=performance_generator,
         tuner_model=SMACModel(backend="smac", searcher="SMAC-EI"),
-        warm_start_configs=warm_start_configs,
-        random_state=RANDOM_STATE,
-        n_trials=N_TRIALS,
-    )
-
-    _verify_tune_core_functionality(result_df, N_TRIALS, warm_start_configs)
-
-
-def test_gp_opt_tune_core_functionality(
-    small_param_space, performance_generator, warm_start_configs
-):
-    result_df = gp_opt_tune(
-        raw_params=small_param_space,
-        performance_generator=performance_generator,
-        tuner_model=CustomGPModel(backend="gp_opt", searcher="EI"),
         warm_start_configs=warm_start_configs,
         random_state=RANDOM_STATE,
         n_trials=N_TRIALS,

@@ -355,7 +355,7 @@ def run_main_benchmark(
     raw_benchmark_data = pd.DataFrame()
 
     if parallelize:
-        max_workers = multiprocessing.cpu_count()
+        max_workers = max(1, multiprocessing.cpu_count() - 1)
         logger.info(f"Running in parallel across {len(experiment_configs)} datasets using {max_workers} workers.")
         
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:

@@ -21,7 +21,6 @@ from hpobench.config.config_types import TunerConfig
 from hpobench.config.config_types import (
     OptunaModel,
     SMACModel,
-    CustomGPModel,
 )
 
 
@@ -262,16 +261,12 @@ def get_external_tuning_configurations() -> List[TunerConfig]:
     """Get external (non-ccqr_optimization) tuning configurations for baseline comparison.
 
     Returns:
-        List of external tuning configuration objects (e.g., for skopt, optuna).
+        List of external tuning configuration objects (e.g., for optuna, smac).
     """
     return [
         TunerConfig(
-            tuner=CustomGPModel(backend="gp_opt", searcher="EI"),
+            tuner=OptunaModel(backend="optuna", searcher="GP"),
             tuner_identifier="GP-EI",
-        ),
-        TunerConfig(
-            tuner=CustomGPModel(backend="gp_opt", searcher="OBS"),
-            tuner_identifier="GP-OBS",
         ),
         TunerConfig(
             tuner=OptunaModel(backend="optuna", searcher="TPE"),

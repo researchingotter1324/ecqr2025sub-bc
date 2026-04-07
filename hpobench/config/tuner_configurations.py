@@ -25,7 +25,6 @@ from hpobench.config.config_types import (
 
 # 1. Static analysis configurations:
 STATIC_ANALYSIS_ESTIMATOR_ARCHITECTURES = [
-    "qgp",
     "ql",
     "qrf",
     "qgbm",
@@ -141,7 +140,6 @@ ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
 ARCHITECTURE_VARIATION_N_QUANTILES = 6
 ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
-        "qgp",
         "ql",
         "qrf",
         "qgbm",
@@ -173,16 +171,15 @@ LIMITED_ARCHITECTURE_N_QUANTILES = 6
 LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
-            # "qgp",
-            "qgbm",
-            # "qens5",
+            # "qgbm",
+            "qens5",
         ],
         samplers=[
-            ThompsonSampler(
-                n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-                enable_optimistic_sampling=True,
-                adapter=LIMITED_ARCHITECTURE_ADAPTER,
-            ),
+             ExpectedImprovementSampler(
+                        n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+                        num_ei_samples=1000,
+                        adapter=LIMITED_ARCHITECTURE_ADAPTER,
+                    ),
         ],
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,
@@ -195,7 +192,6 @@ PRECONFORMAL_ADAPTER = "DtACI"
 PRECONFORMAL_N_QUANTILES = 6
 PRECONFORMAL_COMPARISON_CONFIGURATIONS = []
 for architecture in [
-    "qgp",
     "qrf",
     "qgbm",
     # "qens5",

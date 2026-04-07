@@ -81,13 +81,7 @@ class OptunaModel(TunerModelConfig):
         "TPE",
         "random",
         "CMA-ES",
-        "GBRT",
-        "RF",
         "GP",
-        "custom-GP-EI",
-        "custom-GP-log-EI",
-        "custom-GP-TS",
-        "custom-GP-UCB",
     ]
 
 
@@ -102,38 +96,7 @@ class SMACModel(TunerModelConfig):
     backend: Literal["smac"]
     searcher: Literal[
         "SMAC-EI",
-        "SMAC-TS",
     ]
-
-
-class CustomGPModel(TunerModelConfig):
-    """Configuration for custom Gaussian Process-based hyperparameter optimization.
-
-    Args:
-        backend: Must be "gp_opt".
-        searcher: GP acquisition function (EI, TS, log-EI, UCB, or OBS).
-    """
-
-    backend: Literal["gp_opt"]
-    searcher: Literal[
-        "EI",
-        "TS",
-        "log-EI",
-        "UCB",
-        "OBS",
-    ]
-
-
-class SkOptModel(TunerModelConfig):
-    """Configuration for scikit-optimize-based hyperparameter optimization.
-
-    Args:
-        backend: Must be "skopt".
-        searcher: Scikit-optimize surrogate model (GP, RF, or GBRT).
-    """
-
-    backend: Literal["skopt"]
-    searcher: Literal["GP", "RF", "GBRT"]
 
 
 class CCQRModel(BaseModel):
@@ -164,8 +127,6 @@ class TunerConfig(BaseModel):
     tuner: Union[
         OptunaModel,
         SMACModel,
-        CustomGPModel,
-        SkOptModel,
         QuantileConformalSearcher,
         CCQRModel,
     ]
