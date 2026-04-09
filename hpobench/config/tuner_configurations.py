@@ -171,8 +171,8 @@ LIMITED_ARCHITECTURE_N_QUANTILES = 6
 LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
-            # "qgbm",
-            "qens5",
+            "qgbm",
+            # "qens5",
         ],
         samplers=[
              ExpectedImprovementSampler(
@@ -180,6 +180,11 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
                         num_ei_samples=1000,
                         adapter=LIMITED_ARCHITECTURE_ADAPTER,
                     ),
+        # ThompsonSampler(
+        #     n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+        #     enable_optimistic_sampling=True,
+        #     adapter=LIMITED_ARCHITECTURE_ADAPTER,
+        # ),
         ],
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,

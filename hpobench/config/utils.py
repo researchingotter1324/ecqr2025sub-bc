@@ -268,16 +268,16 @@ def get_external_tuning_configurations() -> List[TunerConfig]:
             tuner=OptunaModel(backend="optuna", searcher="GP"),
             tuner_identifier="GP-EI",
         ),
-        TunerConfig(
-            tuner=OptunaModel(backend="optuna", searcher="TPE"),
-            tuner_identifier="TPE",
-        ),
-        TunerConfig(
-            tuner=OptunaModel(backend="optuna", searcher="random"),
-            tuner_identifier="RS",
-        ),
-        TunerConfig(
-            tuner=SMACModel(backend="smac", searcher="SMAC-EI"),
-            tuner_identifier="SMAC",
-        ),
+        # TunerConfig(
+        #     tuner=OptunaModel(backend="optuna", searcher="TPE"),
+        #     tuner_identifier="TPE",
+        # ),
+        # TunerConfig(
+        #     tuner=OptunaModel(backend="optuna", searcher="random"),
+        #     tuner_identifier="RS",
+        # ),
+        # TunerConfig(
+        #     tuner=SMACModel(backend="smac", searcher="SMAC-EI"),
+        #     tuner_identifier="SMAC",
+        # ),
     ]

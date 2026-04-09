@@ -46,7 +46,7 @@ except ImportError:
         "smac is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
     )
 
-N_CANDIDATES = 2000
+N_CANDIDATES = 1000
 
 
 def create_runtime_tracker() -> list[datetime]:

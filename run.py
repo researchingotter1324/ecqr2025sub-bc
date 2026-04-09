@@ -34,9 +34,9 @@ run_sections = {
     "run_coverage_analysis": False,
     "run_sampler_variation_analysis": False,
     "run_architecture_variation_analysis": False,
-    "run_external_tuning_analysis": False,
-    "run_heteroscedastic_external_tuning_analysis": True,
-    "run_skew_external_tuning_analysis": True,
+    "run_external_tuning_analysis": True,
+    "run_heteroscedastic_external_tuning_analysis": False,
+    "run_skew_external_tuning_analysis": False,
     "run_preconformal_comparison_analysis": False,
     "run_static_analysis": False,
     "run_quantile_count_comparison": False,
@@ -150,7 +150,7 @@ def main():
                 benchmarks=[
                     # "jahs201",
                     "LCBench-L",
-                    "rbv2_aknn-L",
+                    # "rbv2_aknn-L",
                 ],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,

@@ -219,14 +219,14 @@ def setup_environment(cache_path: str = "cache/") -> tuple[str, logging.Logger]:
         identifier for the current run and logger is the configured logging instance.
     """
     if not os.path.exists(cache_path):
-        os.makedirs(cache_path)
+        os.makedirs(cache_path, exist_ok=True)
 
     run_start = datetime.now()
     run_start_str = run_start.strftime("%Y-%m-%d_%H-%M-%S")
 
     log_path = os.path.join(cache_path, f"logs/{run_start_str}")
     if not os.path.exists(log_path):
-        os.makedirs(log_path)
+        os.makedirs(log_path, exist_ok=True)
     log_filename = os.path.join(
         log_path, f"run_{run_start.strftime(format='%m_%d_%Y-%H_%M_%S')}.log"
     )
