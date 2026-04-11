@@ -24,6 +24,19 @@ from hpobench.config.config_types import (
 )
 
 
+def _fmt_float(value: Any) -> str:
+    """Canonically format a float param so it is stable across Python instances.
+
+    Uses ``:.6g`` (up to 6 significant digits, no trailing zeros) to avoid
+    float precision drift (e.g. 0.8 vs 0.80000000000000004) that would create
+    multiple distinct ``tuner_level`` groups for the same logical configuration.
+    """
+    try:
+        return f"{float(value):.6g}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
 def create_searcher_config_id(
     searcher: Union[QuantileConformalSearcher, str],
     custom_prefix: Optional[str] = None,
@@ -71,6 +84,8 @@ def create_searcher_config_id(
 
     if quantile_arch:
         quantile_arch_upper = quantile_arch.upper()
+        if getattr(sampler, "use_local_search", False):
+            quantile_arch_upper = f"L{quantile_arch_upper}"
         if adapter_name:
             config_id += f"{quantile_arch_upper}-{adapter_name} {sampler_acronym}"
         else:
@@ -78,8 +93,11 @@ def create_searcher_config_id(
     else:
         config_id += f"{sampler_acronym}"
 
-    if hasattr(sampler, "c"):
-        config_id += f" c={sampler.c}"
+    if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
+        config_id += f" iw={_fmt_float(sampler.interval_width)}"
+
+    if hasattr(sampler, "c") and sampler.c is not None:
+        config_id += f" c={_fmt_float(sampler.c)}"
 
     if hasattr(sampler, "beta_decay") and sampler.beta_decay:
         decay_parts = sampler.beta_decay.split("_")
@@ -269,9 +287,13 @@ def get_external_tuning_configurations() -> List[TunerConfig]:
             tuner_identifier="GP-EI",
         ),
         # TunerConfig(
-        #     tuner=OptunaModel(backend="optuna", searcher="TPE"),
-        #     tuner_identifier="TPE",
+        #     tuner=OptunaModel(backend="optuna", searcher="LGP"),
+        #     tuner_identifier="LGP-EI",
         # ),
+        TunerConfig(
+            tuner=OptunaModel(backend="optuna", searcher="TPE"),
+            tuner_identifier="TPE",
+        ),
         # TunerConfig(
         #     tuner=OptunaModel(backend="optuna", searcher="random"),
         #     tuner_identifier="RS",
@@ -279,5 +301,9 @@ def get_external_tuning_configurations() -> List[TunerConfig]:
         # TunerConfig(
         #     tuner=SMACModel(backend="smac", searcher="SMAC-EI"),
         #     tuner_identifier="SMAC",
+        # ),
+        # TunerConfig(
+        #     tuner=SMACModel(backend="smac", searcher="LSMAC-EI"),
+        #     tuner_identifier="LSMAC",
         # ),
     ]

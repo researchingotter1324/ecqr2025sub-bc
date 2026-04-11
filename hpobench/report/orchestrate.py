@@ -33,6 +33,7 @@ from hpobench.prepare import (
 )
 from hpobench.config.schema import BenchmarkDataSchema
 from hpobench.config.constants import Aliases
+from hpobench.config.utils import _fmt_float
 
 from hpobench.tune import tune
 from hpobench.report.analyze import analyze_main_benchmark
@@ -249,12 +250,14 @@ def _process_single_experiment_config(
             ] = tuner.searcher_tuning_framework
 
             if tuner.tuner.backend == "ccqr_optimization":
-                sampler_name = tuner.tuner.searcher.sampler.__class__.__name__
+                sampler = tuner.tuner.searcher.sampler
+                sampler_name = sampler.__class__.__name__
+                use_local_search_ccqr = bool(
+                    getattr(sampler, "use_local_search", False)
+                )
 
-                if hasattr(tuner.tuner.searcher.sampler, "interval_width"):
-                    confidence_level = str(
-                        tuner.tuner.searcher.sampler.interval_width
-                    )
+                if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
+                    confidence_level = _fmt_float(sampler.interval_width)
                 else:
                     confidence_level = ""
 
@@ -269,16 +272,16 @@ def _process_single_experiment_config(
                 else:
                     n_pre_conformal_trials = ""
 
-                if hasattr(tuner.tuner.searcher.sampler, "n_quantiles"):
-                    sampler_n_quantiles = tuner.tuner.searcher.sampler.n_quantiles
+                if hasattr(sampler, "n_quantiles"):
+                    sampler_n_quantiles = sampler.n_quantiles
                 else:
                     sampler_n_quantiles = ""
 
-                if hasattr(tuner.tuner.searcher.sampler, "adapter"):
-                    if tuner.tuner.searcher.sampler.adapter is None:
+                if hasattr(sampler, "adapter"):
+                    if sampler.adapter is None:
                         sampler_adapter = "None"
                     else:
-                        sampler_adapter = str(tuner.tuner.searcher.sampler.adapter)
+                        sampler_adapter = type(sampler.adapter).__name__
                 else:
                     sampler_adapter = ""
 
@@ -291,6 +294,7 @@ def _process_single_experiment_config(
             else:
                 # NOTE: Use "" instead of None or NaN to avoid bad groupby behavior
                 sampler_name = ""
+                use_local_search_ccqr = False
                 confidence_level = ""
                 estimator_architecture = ""
                 n_pre_conformal_trials = ""
@@ -310,8 +314,28 @@ def _process_single_experiment_config(
             )
             if tuner.tuner.backend == "ccqr_optimization":
                 if sampler_name == "ThompsonSampler":
-                    if tuner.tuner.searcher.sampler.enable_optimistic_sampling:
+                    if sampler.enable_optimistic_sampling:
                         aliased_sampler_name = "OBS"
+                elif sampler_name in ("LowerBoundSampler", "PessimisticLowerBoundSampler"):
+                    # Build a stable, fully-qualified suffix so each distinct
+                    # (iw, c, beta_decay) combination gets its own plotting group.
+                    parts = []
+                    if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
+                        parts.append(f"iw{_fmt_float(sampler.interval_width)}")
+                    if hasattr(sampler, "c") and sampler.c is not None:
+                        parts.append(f"c{_fmt_float(sampler.c)}")
+                    if hasattr(sampler, "beta_decay") and sampler.beta_decay:
+                        decay_parts = sampler.beta_decay.split("_")
+                        parts.append("".join(p[0] for p in decay_parts))
+                    if parts:
+                        aliased_sampler_name = f"{aliased_sampler_name}-{'_'.join(parts)}"
+            if (
+                tuner.tuner.backend == "ccqr_optimization"
+                and use_local_search_ccqr
+            ):
+                aliased_estimator_architecture = (
+                    f"L{aliased_estimator_architecture}"
+                )
             historical_performance[
                 "estimator_architecture"
             ] = aliased_estimator_architecture

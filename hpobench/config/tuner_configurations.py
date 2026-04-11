@@ -44,6 +44,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=adapter,
             c=0,
+            use_local_search=False,
         )
         split_conformal_searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=COVERAGE_ANALYSIS_ARCHITECTURE,
@@ -68,6 +69,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=adapter,
             c=0,
+            use_local_search=True,
         )
         cv_conformal_searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=COVERAGE_ANALYSIS_ARCHITECTURE,
@@ -96,6 +98,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=None,
             c=0,
+            use_local_search=True,
         ),
         n_pre_conformal_trials=10000,
         n_calibration_folds=3,
@@ -115,20 +118,35 @@ SAMPLER_VARIATION_N_DEFAULT_QUANTILES = 6
 SAMPLER_VARIATION_DEFAULT_ADAPTER = "DtACI"
 SAMPLER_VARIATION_CONFIGURATIONS = build_sampler_variation_configurations(
     samplers=[
-        ExpectedImprovementSampler(
-            n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
-            num_ei_samples=1000,
+        # ExpectedImprovementSampler(
+        #     n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
+        #     num_ei_samples=1000,
+        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+        #     use_local_search=False,
+        # ),
+        # ThompsonSampler(
+        #     n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
+        #     enable_optimistic_sampling=False,
+        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+        # ),
+        # ThompsonSampler(
+        #     n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
+        #     enable_optimistic_sampling=True,
+        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+        # ),
+        # LowerBoundSampler(
+        #     interval_width=0.8,
+        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+        #     beta_decay="logarithmic_decay",
+        #     use_local_search=True,
+        #     c=0.5,
+        # ),
+        LowerBoundSampler(
+            interval_width=0.8,
             adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        ),
-        ThompsonSampler(
-            n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
-            enable_optimistic_sampling=False,
-            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        ),
-        ThompsonSampler(
-            n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
-            enable_optimistic_sampling=True,
-            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+            beta_decay="logarithmic_decay",
+            use_local_search=False,
+            c=0.5,
         ),
     ],
     quantile_arch="qgbm",
@@ -171,20 +189,50 @@ LIMITED_ARCHITECTURE_N_QUANTILES = 6
 LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
-            "qgbm",
-            # "qens5",
+            # "qgp",
+            # "qgbm",
+            "qens5",
+            # "qrf",
         ],
         samplers=[
-             ExpectedImprovementSampler(
-                        n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-                        num_ei_samples=1000,
-                        adapter=LIMITED_ARCHITECTURE_ADAPTER,
-                    ),
-        # ThompsonSampler(
-        #     n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-        #     enable_optimistic_sampling=True,
-        #     adapter=LIMITED_ARCHITECTURE_ADAPTER,
-        # ),
+        LowerBoundSampler(
+            interval_width=0.8,
+            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+            beta_decay="logarithmic_decay",
+            use_local_search=True,
+            c=0.8,
+        ),
+                LowerBoundSampler(
+            interval_width=0.8,
+            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+            beta_decay="logarithmic_decay",
+            use_local_search=True,
+            c=0.6,
+        ),
+                LowerBoundSampler(
+            interval_width=0.8,
+            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+            beta_decay="inverse_square_root_decay",
+            use_local_search=True,
+            c=0.6,
+        ),
+            #  ExpectedImprovementSampler(
+            #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+            #             num_ei_samples=1000,
+            #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
+            #             use_local_search=True,
+            #         ),
+            #  ExpectedImprovementSampler(
+            #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+            #             num_ei_samples=1000,
+            #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
+            #             use_local_search=False,
+            #         ),
+        ThompsonSampler(
+            n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+            enable_optimistic_sampling=True,
+            adapter=LIMITED_ARCHITECTURE_ADAPTER,
+        ),
         ],
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,

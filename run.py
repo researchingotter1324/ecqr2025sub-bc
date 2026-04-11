@@ -181,7 +181,9 @@ def main():
         try:
             run_and_analyze_main_benchmark(
                 parallelize=True,
-                benchmarks=["LCBench-H", "rbv2_aknn-H"],
+                benchmarks=["LCBench-H",
+                #  "rbv2_aknn-H"
+                 ],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
@@ -211,7 +213,9 @@ def main():
         try:
             run_and_analyze_main_benchmark(
                 parallelize=True,
-                benchmarks=["LCBench-A", "rbv2_aknn-A"],
+                benchmarks=["LCBench-A", 
+                # "rbv2_aknn-A"
+                ],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,

@@ -10,6 +10,7 @@ from hpobench.config.config_types import (
     OptunaModel,
     SMACModel,
 )
+from smac.acquisition.maximizer.random_search import RandomSearch
 
 try:
     from ccqr_optimization.tuning import ConformalTuner
@@ -46,7 +47,7 @@ except ImportError:
         "smac is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
     )
 
-N_CANDIDATES = 1000
+N_CANDIDATES = 2000
 
 
 def create_runtime_tracker() -> list[datetime]:
@@ -342,8 +343,10 @@ def optuna_tune(
         initialized_sampler = RandomSampler(seed=random_state)
     elif searcher == "CMA-ES":
         initialized_sampler = CmaEsSampler(seed=random_state, n_startup_trials=0)
+    elif searcher == "LGP":
+        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True)
     elif searcher == "GP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True)
+        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=False)
     else:
         raise ValueError(f"Unknown optuna sampler: {searcher}")
 
@@ -661,7 +664,7 @@ def smac_tune(
     )
 
     searcher = tuner_model.searcher
-    if searcher != "SMAC-EI":
+    if searcher not in ["SMAC-EI", "LSMAC-EI"]:
         raise ValueError(f"Unknown SMAC sampler: {searcher}")
 
     # Setup runtime tracking
@@ -672,6 +675,11 @@ def smac_tune(
         runtimes=runtimes,
     )
 
+    if searcher == "LSMAC-EI":
+        acquisition_maximizer = HyperparameterOptimizationFacade.get_acquisition_maximizer(scenario)
+    else:
+        acquisition_maximizer = RandomSearch(scenario.configspace)
+
     # Create SMAC facade with fair comparison settings
     smac = HyperparameterOptimizationFacade(
         scenario=scenario,
@@ -681,6 +689,7 @@ def smac_tune(
         intensifier=HyperparameterOptimizationFacade.get_intensifier(
             scenario, max_config_calls=1
         ),
+        acquisition_maximizer=acquisition_maximizer,
         # Disable random interleaving: always use acquisition function
         random_design=HyperparameterOptimizationFacade.get_random_design(
             scenario, probability=0.0
