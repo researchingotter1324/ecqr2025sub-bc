@@ -129,56 +129,6 @@ def create_searcher_config_id(
     return config_id
 
 
-def build_static_tuning_configurations(
-    quantile_architectures: List[Any],
-    searcher_tuning_frameworks: List[Optional[str]],
-    n_pre_conformal_trials: int = 20,
-) -> List[TunerConfig]:
-    """Build static tuning configurations for given quantile architectures and tuning frameworks.
-
-    Args:
-        quantile_architectures: List of quantile estimator architectures.
-        searcher_tuning_frameworks: List of tuning framework identifiers.
-        n_pre_conformal_trials: Number of pre-conformal trials.
-
-    Returns:
-        List of static tuning configuration objects.
-    """
-    # NOTE: Sampler is irrelevant for static tuning analysis,
-    # since we only consider the first trial:
-
-    placeholder_sampler = LowerBoundSampler(
-        interval_width=0.9,
-        adapter="DtACI",
-        c=1,
-        beta_decay="logarithmic_decay",
-    )
-    sampler_copy = deepcopy(placeholder_sampler)
-    return [
-        TunerConfig(
-            tuner=CCQRModel(
-                backend="ccqr_optimization",
-                searcher=QuantileConformalSearcher(
-                    quantile_estimator_architecture=arch,
-                    sampler=sampler_copy,
-                    n_pre_conformal_trials=n_pre_conformal_trials,
-                ),
-            ),
-            tuner_identifier=create_searcher_config_id(
-                QuantileConformalSearcher(
-                    quantile_estimator_architecture=arch,
-                    sampler=sampler_copy,
-                    n_pre_conformal_trials=n_pre_conformal_trials,
-                ),
-                searcher_tuning_framework=framework,
-            ),
-            searcher_tuning_framework=framework,
-        )
-        for arch in quantile_architectures
-        for framework in searcher_tuning_frameworks
-    ]
-
-
 def build_sampler_variation_configurations(
     samplers: List[
         Union[
@@ -286,14 +236,14 @@ def get_external_tuning_configurations() -> List[TunerConfig]:
             tuner=OptunaModel(backend="optuna", searcher="GP"),
             tuner_identifier="GP-EI",
         ),
-        # TunerConfig(
-        #     tuner=OptunaModel(backend="optuna", searcher="LGP"),
-        #     tuner_identifier="LGP-EI",
-        # ),
         TunerConfig(
-            tuner=OptunaModel(backend="optuna", searcher="TPE"),
-            tuner_identifier="TPE",
+            tuner=OptunaModel(backend="optuna", searcher="LGP"),
+            tuner_identifier="LGP-EI",
         ),
+        # TunerConfig(
+        #     tuner=OptunaModel(backend="optuna", searcher="TPE"),
+        #     tuner_identifier="TPE",
+        # ),
         # TunerConfig(
         #     tuner=OptunaModel(backend="optuna", searcher="random"),
         #     tuner_identifier="RS",

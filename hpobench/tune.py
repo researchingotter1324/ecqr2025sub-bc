@@ -344,9 +344,9 @@ def optuna_tune(
     elif searcher == "CMA-ES":
         initialized_sampler = CmaEsSampler(seed=random_state, n_startup_trials=0)
     elif searcher == "LGP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True)
+        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True, n_preliminary_samples=N_CANDIDATES)
     elif searcher == "GP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=False)
+        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=False, n_preliminary_samples=N_CANDIDATES)
     else:
         raise ValueError(f"Unknown optuna sampler: {searcher}")
 

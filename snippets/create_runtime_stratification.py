@@ -23,7 +23,7 @@ def create_runtime_stratification(
     """Create stratification based on highest average runtime datasets."""
     scores = {}
     for task_id in task_ids:
-        _, accuracies, runtimes = sample_benchmark_data(
+        _, _feature_groups, accuracies, runtimes = sample_benchmark_data(
             benchmark_name=benchmark_name, task_id=task_id
         )
 

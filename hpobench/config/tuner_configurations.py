@@ -190,8 +190,9 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
             # "qgp",
-            # "qgbm",
-            "qens5",
+            "qgbm",
+            # "qleaf",
+            # "qens5",
             # "qrf",
         ],
         samplers=[
@@ -202,20 +203,27 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
             use_local_search=True,
             c=0.8,
         ),
-                LowerBoundSampler(
+        LowerBoundSampler(
             interval_width=0.8,
             adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
             beta_decay="logarithmic_decay",
-            use_local_search=True,
-            c=0.6,
+            use_local_search=False,
+            c=0.8,
         ),
-                LowerBoundSampler(
-            interval_width=0.8,
-            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-            beta_decay="inverse_square_root_decay",
-            use_local_search=True,
-            c=0.6,
-        ),
+        #         LowerBoundSampler(
+        #     interval_width=0.8,
+        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+        #     beta_decay="logarithmic_decay",
+        #     use_local_search=True,
+        #     c=0.6,
+        # ),
+        #         LowerBoundSampler(
+        #     interval_width=0.8,
+        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+        #     beta_decay="inverse_square_root_decay",
+        #     use_local_search=True,
+        #     c=0.6,
+        # ),
             #  ExpectedImprovementSampler(
             #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
             #             num_ei_samples=1000,
@@ -228,11 +236,11 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
             #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
             #             use_local_search=False,
             #         ),
-        ThompsonSampler(
-            n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-            enable_optimistic_sampling=True,
-            adapter=LIMITED_ARCHITECTURE_ADAPTER,
-        ),
+        # ThompsonSampler(
+        #     n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+        #     enable_optimistic_sampling=True,
+        #     adapter=LIMITED_ARCHITECTURE_ADAPTER,
+        # ),
         ],
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,

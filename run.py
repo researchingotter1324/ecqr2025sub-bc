@@ -35,8 +35,8 @@ run_sections = {
     "run_sampler_variation_analysis": False,
     "run_architecture_variation_analysis": False,
     "run_external_tuning_analysis": True,
-    "run_heteroscedastic_external_tuning_analysis": False,
-    "run_skew_external_tuning_analysis": False,
+    "run_heteroscedastic_external_tuning_analysis": True,
+    "run_skew_external_tuning_analysis": True,
     "run_preconformal_comparison_analysis": False,
     "run_static_analysis": False,
     "run_quantile_count_comparison": False,
@@ -181,8 +181,9 @@ def main():
         try:
             run_and_analyze_main_benchmark(
                 parallelize=True,
-                benchmarks=["LCBench-H",
-                #  "rbv2_aknn-H"
+                benchmarks=[
+                    "LCBench-H",
+                    "rbv2_aknn-H"
                  ],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
@@ -213,8 +214,9 @@ def main():
         try:
             run_and_analyze_main_benchmark(
                 parallelize=True,
-                benchmarks=["LCBench-A", 
-                # "rbv2_aknn-A"
+                benchmarks=[
+                    "LCBench-A", 
+                    "rbv2_aknn-A"
                 ],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
