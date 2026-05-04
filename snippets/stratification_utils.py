@@ -1,16 +1,14 @@
 import json
 import numpy as np
 import os
-from typing import Dict, List, Tuple, Union, Any
+from typing import Dict, List, Optional, Set, Tuple, Union, Any
 import warnings
 
 from yahpo_gym import BenchmarkSet, local_config
-from sklearn.preprocessing import OneHotEncoder
 from ConfigSpace import Configuration
 import ConfigSpace as CS
 import logging
 
-np.random.seed(42)
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -24,21 +22,24 @@ def get_benchmark_task_ids(benchmark_name: str) -> List[str]:
     return benchmark_set.instances
 
 
-def get_yahpo_log_info(benchmark: str) -> Dict[str, bool]:
-    config_path = os.path.join("yahpo_bench_data", benchmark, "config_space.json")
-    log_info = {}
+def get_yahpo_log_info(benchmark: str) -> Set[str]:
+    """Return the set of hyperparameter names that use a log scale.
 
+    Args:
+        benchmark: YAHPO benchmark scenario name.
+
+    Returns:
+        Set of parameter names declared as log=true in config_space.json.
+    """
+    config_path = os.path.join("yahpo_bench_data", benchmark, "config_space.json")
+    log_params = set()
     if os.path.exists(config_path):
         with open(config_path, "r") as f:
             config_data = json.load(f)
-
         for hp in config_data.get("hyperparameters", []):
-            param_name = hp.get("name")
-            log_flag = hp.get("log", False)
-            if param_name:
-                log_info[param_name] = log_flag
-
-    return log_info
+            if hp.get("log", False) and hp.get("name"):
+                log_params.add(hp["name"])
+    return log_params
 
 
 def get_filtered_configuration(
@@ -73,282 +74,149 @@ def preprocess_configurations(
     configs: List[Dict],
     config_space: CS.ConfigurationSpace,
     fidelity_space: Dict[str, Any],
-    log_info: Dict[str, bool],
-) -> Tuple[np.ndarray, List[Dict]]:
-    """
-    Featurise a list of hyperparameter configurations into a numeric matrix X.
+    log_params: Set[str],
+) -> Tuple[np.ndarray, np.ndarray, List[str], List[str]]:
+    """Featurise configurations into numeric and categorical arrays, dropping constant columns.
 
-    Categorical hyperparameters are one-hot encoded; numeric hyperparameters
-    (float and integer) are kept as raw floats, with log-scale parameters
-    log-transformed.  Log-scale parameters that are zero or negative are
-    left as-is (the log guard is applied only when value > 0).
+    Numeric HPs are extracted in sorted name order and log-transformed where
+    applicable. Categorical HPs are extracted as raw strings in sorted name order.
+    Any column (numeric or categorical) that is constant across all rows is
+    dropped immediately, as it carries no information for either regression or
+    distance calculations.
 
-    Returns
-    -------
-    X : np.ndarray, shape (n_configs, n_cols)
-        Numeric feature matrix.  Columns consist of:
-          - one column per numeric hyperparameter (in sorted name order), then
-          - one column per category per categorical hyperparameter (sorted name
-            order, categories in the order defined in the ConfigSpace).
-    feature_groups : list of dict
-        Metadata describing each *original feature* (not column) in the order
-        their columns appear in X.  Each entry has:
-          "name"     : str   — hyperparameter name
-          "type"     : "numeric" | "categorical"
-          "col_start": int   — first column index in X for this feature
-          "col_end"  : int   — one-past-last column index in X for this feature
-        This is used downstream to compute Gower distance correctly (each
-        original feature contributes equally regardless of OHE width).
+    Args:
+        configs: List of hyperparameter configuration dicts.
+        config_space: The ConfigurationSpace for the benchmark.
+        fidelity_space: Dict of fidelity parameter names to their fixed values.
+            These parameters are excluded from the feature matrices.
+        log_params: Set of hyperparameter names that should be log-transformed.
+
+    Returns:
+        X_num: Float64 matrix of shape (n, n_numeric_active). Log-transformed
+            where applicable. Constant columns dropped. Not normalised.
+        X_cat_str: Object array of shape (n, n_cat_active) containing raw string
+            category values. Constant columns (single unique value) dropped.
+        numeric_names: Names of the retained numeric features, same order as
+            columns of X_num.
+        categorical_names: Names of the retained categorical features, same
+            order as columns of X_cat_str.
     """
     if not configs:
-        return np.array([]), []
+        return np.empty((0, 0)), np.empty((0, 0), dtype=object), [], []
 
     all_hyperparams = {hp.name: hp for hp in config_space.get_hyperparameters()}
 
-    categorical_features = []
-    numeric_features = []
-    log_scale_features = set()
-    categorical_choices = {}
+    categorical_candidates = []
+    numeric_candidates = []
 
     for param_name, hp in all_hyperparams.items():
         if param_name in fidelity_space:
             continue
-
         if isinstance(hp, CS.CategoricalHyperparameter):
-            categorical_features.append(param_name)
-            categorical_choices[param_name] = hp.choices
-        elif isinstance(
-            hp, (CS.UniformFloatHyperparameter, CS.UniformIntegerHyperparameter)
-        ):
-            numeric_features.append(param_name)
-            if log_info.get(param_name, False):
-                log_scale_features.add(param_name)
+            categorical_candidates.append(param_name)
+        elif isinstance(hp, (CS.UniformFloatHyperparameter, CS.UniformIntegerHyperparameter)):
+            numeric_candidates.append(param_name)
 
-    categorical_features = sorted(categorical_features)
-    numeric_features = sorted(numeric_features)
+    categorical_candidates = sorted(categorical_candidates)
+    numeric_candidates = sorted(numeric_candidates)
 
-    X_numeric = []
-    X_categorical = []
+    X_num_raw = []
+    X_cat_raw = []
 
     for config in configs:
         numeric_row = []
-        for param in numeric_features:
-            value = config.get(param, 0)
+        for param in numeric_candidates:
+            value = config[param]
             if isinstance(value, bool):
                 value = int(value)
-
-            if param in log_scale_features and value > 0:
+            if param in log_params and value > 0:
                 value = np.log(value)
-
             numeric_row.append(float(value))
-        X_numeric.append(numeric_row)
+        X_num_raw.append(numeric_row)
 
-        categorical_row = []
-        for param in categorical_features:
-            value = config.get(param, categorical_choices[param][0])
-            categorical_row.append(str(value))
-        X_categorical.append(categorical_row)
+        X_cat_raw.append([str(config[param]) for param in categorical_candidates])
 
-    X_numeric = np.array(X_numeric)
+    X_num_full = np.array(X_num_raw, dtype=np.float64)
+    X_cat_full = np.array(X_cat_raw, dtype=object)
 
-    # Build feature_groups metadata and assemble X --------------------------
-    feature_groups: List[Dict] = []
-    col_cursor = 0
+    active_num = []
+    numeric_names = []
+    for i, name in enumerate(numeric_candidates):
+        col = X_num_full[:, i]
+        if col.max() - col.min() >= 1e-12:
+            active_num.append(i)
+            numeric_names.append(name)
 
-    # Numeric features: one column each
-    for param in numeric_features:
-        feature_groups.append({
-            "name":      param,
-            "type":      "numeric",
-            "col_start": col_cursor,
-            "col_end":   col_cursor + 1,
-        })
-        col_cursor += 1
+    active_cat = []
+    categorical_names = []
+    for i, name in enumerate(categorical_candidates):
+        if len(np.unique(X_cat_full[:, i])) > 1:
+            active_cat.append(i)
+            categorical_names.append(name)
 
-    if categorical_features:
-        encoder = OneHotEncoder(sparse=False, handle_unknown="ignore")
-        all_categories = [
-            [str(c) for c in categorical_choices[param]]
-            for param in categorical_features
-        ]
-        encoder.fit([[cats[0] for cats in all_categories]])
-        # Fit on all possible category values so every category gets a column
-        encoder.fit(
-            [[str(c) for c in categorical_choices[param][0:1]]
-             for param in categorical_features]
-        )
-        # Proper fit: supply one row per category combination is not feasible;
-        # instead fit with categories= kwarg to guarantee all levels are seen.
-        encoder = OneHotEncoder(
-            categories=all_categories,
-            sparse=False,
-            handle_unknown="ignore",
-        )
-        encoder.fit(X_categorical)
-        X_cat_encoded = encoder.transform(X_categorical)
+    X_num = X_num_full[:, active_num] if active_num else np.empty((len(configs), 0))
+    X_cat_str = X_cat_full[:, active_cat] if active_cat else np.empty((len(configs), 0), dtype=object)
 
-        # Record OHE column ranges for each categorical feature
-        ohe_col_start = len(numeric_features)  # numeric columns come first
-        for param, cats in zip(categorical_features, all_categories):
-            n_cats = len(cats)
-            feature_groups.append({
-                "name":      param,
-                "type":      "categorical",
-                "col_start": ohe_col_start,
-                "col_end":   ohe_col_start + n_cats,
-            })
-            ohe_col_start += n_cats
-
-        X = np.hstack([X_numeric, X_cat_encoded])
-    else:
-        X = X_numeric
-
-    return X, feature_groups
-
-
-def normalise_for_gp(
-    X: np.ndarray,
-    feature_groups: List[Dict],
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Convert the mixed-type feature matrix X into the format expected by the
-    Optuna GP (GPRegressor in optuna_gp.py):
-
-      - Numeric columns: min-max normalised to [0, 1] using the observed range
-        in X.  (Numeric columns in X are already log-transformed where needed,
-        so we just scale the already-transformed values.)
-      - Categorical features: collapsed from their OHE block back to a single
-        integer-index column (argmax of the OHE block), one column per original
-        categorical hyperparameter.
-
-    The output matrix has one column per original hyperparameter (not per OHE
-    column), matching the Optuna GP's ARD kernel expectation.
-
-    Returns
-    -------
-    X_gp : np.ndarray, shape (n, p)  — p = number of original features
-    is_categorical : np.ndarray, shape (p,), bool
-    """
-    n = X.shape[0]
-    num_features = len(feature_groups)
-    X_gp = np.empty((n, num_features), dtype=np.float64)
-    is_categorical = np.zeros(num_features, dtype=bool)
-
-    for col_idx, fg in enumerate(feature_groups):
-        cs, ce = fg["col_start"], fg["col_end"]
-        block = X[:, cs:ce]
-
-        if fg["type"] == "numeric":
-            col = block[:, 0].astype(np.float64)
-            col_min, col_max = col.min(), col.max()
-            col_range = col_max - col_min
-            if col_range < 1e-12:
-                X_gp[:, col_idx] = 0.5  # constant feature: place at midpoint
-            else:
-                X_gp[:, col_idx] = (col - col_min) / col_range
-            is_categorical[col_idx] = False
-
-        else:
-            # Recover category index from OHE block (argmax of each row)
-            X_gp[:, col_idx] = np.argmax(block, axis=1).astype(np.float64)
-            is_categorical[col_idx] = True
-
-    return X_gp, is_categorical
+    return X_num, X_cat_str, numeric_names, categorical_names
 
 
 def gower_distance_matrix(
-    X: np.ndarray,
-    feature_groups: List[Dict],
+    X_num: np.ndarray,
+    X_cat_str: np.ndarray,
 ) -> np.ndarray:
+    """Compute the symmetric n×n Gower (1971) distance matrix.
+
+    Gower distance is the mean of per-feature partial distances, each in [0, 1]:
+
+        d_Gower(i, j) = (1 / p) * sum_f  d_f(x_i_f, x_j_f)
+
+    where p is the number of features. Partial distances:
+
+        numeric:     d_f = |x_i - x_j| / range_f  (range computed over all n rows)
+        categorical: d_f = 0 if x_i == x_j, else 1
+
+    Numeric normalisation is applied internally. Categorical distance requires no
+    encoding — pairwise inequality of string values is computed directly.
+
+    Constant numeric columns must be absent (dropped by preprocess_configurations).
+
+    Why not use the gower PyPI package?
+    Both available packages (gower v0.1.2 and gower-multiprocessing v0.2.2) contain
+    a documented bug: they divide by max rather than range, producing incorrect
+    values when min < 0 (as occurs after log-transforming hyperparameters like
+    learning rate). This implementation is correct in all cases.
+
+    Args:
+        X_num: Numeric feature matrix, shape (n, n_numeric). Values are raw
+            (log-transformed, not normalised). No constant columns.
+        X_cat_str: Categorical feature matrix, shape (n, n_cat), dtype object.
+            Each column contains string category values. No constant columns.
+
+    Returns:
+        D: Symmetric Gower distance matrix, shape (n, n), dtype float32,
+            with zeros on the diagonal.
     """
-    Compute the symmetric n×n Gower (1971) distance matrix for a mixed-type
-    feature matrix.
+    n = X_num.shape[0] if X_num.shape[0] > 0 else X_cat_str.shape[0]
+    n_numeric = X_num.shape[1]
+    n_cat = X_cat_str.shape[1]
+    p = n_numeric + n_cat
 
-    Gower distance is defined as the mean of per-feature partial distances,
-    where each partial distance is normalised to [0, 1]:
-
-        d_Gower(i, j) = (1 / p) * Σ_f  d_f(xᵢ_f, xⱼ_f)
-
-    where p is the number of *original features* (not columns, so OHE does not
-    give categorical variables disproportionate weight), and:
-
-        d_f = |xᵢ_f − xⱼ_f| / range_f    for numeric features
-        d_f = 0 if same category, 1 otherwise  for categorical features
-
-    The categorical partial distance is computed from the OHE columns as:
-        d_f = 0.5 * ||OHE_i_f − OHE_j_f||₁
-    which equals 0 when the same category (OHE identical) and 1 when different
-    (exactly two positions differ by 1 in the OHE vector).
-
-    Why not use the `gower` PyPI package?
-    ---------------------------------------
-    The two available packages (`gower` v0.1.2 and `gower-multiprocessing`
-    v0.2.2, which share the same core) contain a documented bug in their
-    numeric normalisation: they divide by `max` rather than by `range`, i.e.:
-
-        num_ranges[col] = abs(1 - min/max)   # ← wrong when min < 0
-        Z_num = Z_num / num_max              # ← should divide by range
-
-    The correct Gower formula is `|xᵢ − xⱼ| / (max − min)`.  The packages
-    only recover the correct value when `min = 0`, but our pipeline
-    log-transforms hyperparameters with log-scale priors (e.g. learning rate),
-    producing columns where `min < 0`.  Using the package would silently
-    produce negative partial distances for those columns, corrupting the
-    distance matrix.  This implementation uses `(col − col.min()) / col_range`
-    which is correct in all cases.
-
-    Parameters
-    ----------
-    X : np.ndarray, shape (n, n_cols)
-        Mixed feature matrix as produced by preprocess_configurations.
-    feature_groups : list of dict
-        Metadata from preprocess_configurations describing column ranges and
-        types for each original feature.
-
-    Returns
-    -------
-    D : np.ndarray, shape (n, n), dtype float32
-        Symmetric Gower distance matrix with zeros on the diagonal.
-    """
-    n = X.shape[0]
-    p = len(feature_groups)
     if p == 0 or n == 0:
         return np.zeros((n, n), dtype=np.float32)
 
-    # Accumulate partial distances; use float32 to save memory for large n
     D = np.zeros((n, n), dtype=np.float32)
 
-    for fg in feature_groups:
-        cs, ce = fg["col_start"], fg["col_end"]
-        block = X[:, cs:ce]  # shape (n, width)
+    for col in range(n_numeric):
+        values = X_num[:, col]
+        col_range = values.max() - values.min()
+        col_norm = (values - values.min()) / col_range
+        D += np.abs(col_norm[:, None] - col_norm[None, :]).astype(np.float32)
 
-        if fg["type"] == "numeric":
-            # Single column; normalise by observed range
-            col = block[:, 0]
-            col_range = col.max() - col.min()
-            if col_range < 1e-12:
-                # Constant feature — contributes 0 distance everywhere
-                continue
-            col_norm = (col - col.min()) / col_range
-            # Pairwise absolute difference: |col_norm_i - col_norm_j|
-            diff = np.abs(col_norm[:, None] - col_norm[None, :])  # (n, n)
-            D += diff.astype(np.float32)
-
-        else:
-            # Categorical: OHE block of width c.
-            # d_f(i,j) = 0.5 * L1(OHE_i, OHE_j) ∈ {0, 1}
-            # Vectorised: for binary {0,1} OHE, L1 = sum of abs differences.
-            # Use float32 arithmetic to avoid large intermediate allocations.
-            block_f = block.astype(np.float32)
-            # (n, n) via broadcasting: sum over OHE columns
-            # To avoid n×n×c tensor, compute as: n² dot-product trick
-            # d_f(i,j) = 0 iff OHE_i == OHE_j, i.e. dot(OHE_i, OHE_j) = 1
-            # For binary OHE: ||a-b||₁/2 = 1 - a·b  (when exactly one 1 each)
-            dot = block_f @ block_f.T  # (n, n)
-            D += (1.0 - dot).astype(np.float32)
+    for col in range(n_cat):
+        cats = X_cat_str[:, col]
+        D += (cats[:, None] != cats[None, :]).astype(np.float32)
 
     D /= p
-    # Numerical symmetry guard (floating point can break symmetry slightly)
     D = 0.5 * (D + D.T)
     np.fill_diagonal(D, 0.0)
     return D
@@ -358,7 +226,24 @@ def sample_benchmark_data(
     benchmark_name: str,
     task_id: str,
     n_samples: int = 10000,
-) -> Tuple[np.ndarray, List[Dict], np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, List[str], List[str], np.ndarray, np.ndarray]:
+    """Sample configurations from the benchmark surrogate and return feature arrays.
+
+    Args:
+        benchmark_name: YAHPO benchmark scenario name (e.g. "lcbench").
+        task_id: Instance identifier within the benchmark.
+        n_samples: Number of configurations to sample.
+
+    Returns:
+        X_num: Numeric feature matrix, shape (n_valid, n_numeric). Log-transformed
+            where applicable, constant columns dropped, not normalised.
+        X_cat_str: Categorical feature matrix, shape (n_valid, n_cat), dtype object.
+            Raw string values, constant columns dropped.
+        numeric_names: Names of retained numeric features.
+        categorical_names: Names of retained categorical features.
+        performances: Observed performance values, shape (n_valid,).
+        runtimes: Observed runtime values, shape (n_valid,).
+    """
     local_config.init_config()
     local_config.set_data_path("yahpo_bench_data")
 
@@ -366,12 +251,13 @@ def sample_benchmark_data(
         scenario=benchmark_name, instance=task_id, active_session=False, check=False
     )
     config_space = benchmark_set.get_opt_space(drop_fidelity_params=False, seed=42)
+    config_space.seed(42)
     configurations = config_space.sample_configuration(n_samples)
 
     if not isinstance(configurations, list):
         configurations = [configurations]
 
-    log_info = get_yahpo_log_info(benchmark_name)
+    log_params = get_yahpo_log_info(benchmark_name)
 
     fidelity_param_names = benchmark_set.config.fidelity_params
     instance_names = benchmark_set.config.instance_names
@@ -393,7 +279,6 @@ def sample_benchmark_data(
     for config in configurations:
         config_dict = dict(config)
         config_dicts.append(config_dict)
-
         filtered_config = get_filtered_configuration(
             configuration=config_dict,
             config_space=config_space,
@@ -408,7 +293,7 @@ def sample_benchmark_data(
     performances = []
     runtimes = []
     valid_indices = []
-    
+
     for i, result in enumerate(batch_results):
         if benchmark_name.startswith("rbv2"):
             performance = result.get("acc")
@@ -427,7 +312,7 @@ def sample_benchmark_data(
         is_valid = True
         perf_float = None
         runtime_float = None
-        
+
         if performance is not None:
             perf_float = float(performance)
             if np.isnan(perf_float) or not np.isfinite(perf_float):
@@ -441,7 +326,7 @@ def sample_benchmark_data(
                 is_valid = False
         else:
             is_valid = False
-            
+
         if is_valid:
             performances.append(perf_float)
             runtimes.append(runtime_float)
@@ -449,16 +334,18 @@ def sample_benchmark_data(
 
     valid_config_dicts = [config_dicts[i] for i in valid_indices]
 
-    tabularized_configurations, feature_groups = preprocess_configurations(
+    X_num, X_cat_str, numeric_names, categorical_names = preprocess_configurations(
         configs=valid_config_dicts,
         config_space=config_space,
         fidelity_space=fidelity_space,
-        log_info=log_info,
+        log_params=log_params,
     )
 
     return (
-        tabularized_configurations,
-        feature_groups,
+        X_num,
+        X_cat_str,
+        numeric_names,
+        categorical_names,
         np.array(performances) if performances else np.array([]),
         np.array(runtimes) if runtimes else np.array([]),
     )
@@ -492,16 +379,13 @@ def validate_dataset(
 ) -> bool:
     if len(accuracies) == 0 or len(runtimes) == 0:
         return False
-        
+
     if check_perfect_accuracy_ratio(
         accuracies=accuracies, max_perfect_acc_ratio=max_perfect_acc_ratio
     ):
         return False
 
-    if (
-        min_avg_runtime > 0
-        and np.mean(runtimes) < min_avg_runtime
-    ):
+    if min_avg_runtime > 0 and np.mean(runtimes) < min_avg_runtime:
         return False
 
     return True

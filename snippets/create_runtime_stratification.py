@@ -8,7 +8,7 @@ from stratification_utils import (
 )
 
 BENCHMARKS = ["rbv2_aknn", "lcbench"]
-TOP_COUNT = 5
+TOP_COUNT = 10
 TOP_PERCENT = None
 MAX_PERFECT_ACC_RATIO = 0.05
 
@@ -23,7 +23,7 @@ def create_runtime_stratification(
     """Create stratification based on highest average runtime datasets."""
     scores = {}
     for task_id in task_ids:
-        _, _feature_groups, accuracies, runtimes = sample_benchmark_data(
+        _X_num, _X_cat_str, _num_names, _cat_names, accuracies, runtimes = sample_benchmark_data(
             benchmark_name=benchmark_name, task_id=task_id
         )
 

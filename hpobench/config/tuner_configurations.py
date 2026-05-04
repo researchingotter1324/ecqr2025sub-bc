@@ -9,6 +9,7 @@ try:
         ExpectedImprovementSampler,
     )
     from ccqr_optimization.selection.sampling.thompson_samplers import ThompsonSampler
+    from ccqr_optimization.selection.sampling.local_search import list_local_search_variants
 except ImportError:
     raise ImportError(
         "ccqr_optimization is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
@@ -23,13 +24,7 @@ from hpobench.config.config_types import (
     CCQRModel,
 )
 
-# 1. Static analysis configurations:
-STATIC_ANALYSIS_ESTIMATOR_ARCHITECTURES = [
-    "ql",
-    "qrf",
-    "qgbm",
-    "qens5",
-]
+LOCAL_SEARCH_VARIANT = "dfo3__adaptive_narrow"
 
 # 2. Coverage analysis configurations:
 COVERAGE_ANALYSIS_CONFIGURATIONS = []
@@ -69,7 +64,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=adapter,
             c=0,
-            use_local_search=True,
+            use_local_search=False,
         )
         cv_conformal_searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=COVERAGE_ANALYSIS_ARCHITECTURE,
@@ -98,7 +93,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=None,
             c=0,
-            use_local_search=True,
+            use_local_search=False,
         ),
         n_pre_conformal_trials=10000,
         n_calibration_folds=3,
@@ -112,55 +107,15 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
     COVERAGE_ANALYSIS_CONFIGURATIONS.append(non_conformal_config)
     COVERAGE_PLOT_CONFIGURATIONS.append(non_conformal_config)
 
-
-# 3. Create configurations feeding the comparative tuner rank plots:
-SAMPLER_VARIATION_N_DEFAULT_QUANTILES = 6
-SAMPLER_VARIATION_DEFAULT_ADAPTER = "DtACI"
-SAMPLER_VARIATION_CONFIGURATIONS = build_sampler_variation_configurations(
-    samplers=[
-        # ExpectedImprovementSampler(
-        #     n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
-        #     num_ei_samples=1000,
-        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        #     use_local_search=False,
-        # ),
-        # ThompsonSampler(
-        #     n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
-        #     enable_optimistic_sampling=False,
-        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        # ),
-        # ThompsonSampler(
-        #     n_quantiles=SAMPLER_VARIATION_N_DEFAULT_QUANTILES,
-        #     enable_optimistic_sampling=True,
-        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        # ),
-        # LowerBoundSampler(
-        #     interval_width=0.8,
-        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        #     beta_decay="logarithmic_decay",
-        #     use_local_search=True,
-        #     c=0.5,
-        # ),
-        LowerBoundSampler(
-            interval_width=0.8,
-            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-            beta_decay="logarithmic_decay",
-            use_local_search=False,
-            c=0.5,
-        ),
-    ],
-    quantile_arch="qgbm",
-    calibration_split_strategy="train_test_split",
-)
-
 # 4. Architecture variation configurations:
 ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
 ARCHITECTURE_VARIATION_N_QUANTILES = 6
 ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
         "ql",
-        "qrf",
+        "qleaf",
         "qgbm",
+        "qgp",
         "qens5",
     ],
     samplers=[
@@ -168,17 +123,22 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
             num_ei_samples=1000,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
+            use_local_search=True,
+            local_search_variant=LOCAL_SEARCH_VARIANT,
+        ),
+        LowerBoundSampler(
+            interval_width=0.8,
+            adapter=ARCHITECTURE_VARIATION_ADAPTER,
+            beta_decay="logarithmic_decay",
+            use_local_search=True,
+            local_search_variant=LOCAL_SEARCH_VARIANT,
+            c=0.8,
         ),
         ThompsonSampler(
             n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
             enable_optimistic_sampling=False,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
-        ),
-        ThompsonSampler(
-            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
-            enable_optimistic_sampling=True,
-            adapter=ARCHITECTURE_VARIATION_ADAPTER,
-        ),
+        )
     ],
     calibration_split_strategy="train_test_split",
 )
@@ -190,58 +150,34 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
             # "qgp",
-            "qgbm",
+            # "qgbm",
             # "qleaf",
-            # "qens5",
+            "qens5",
             # "qrf",
         ],
-        samplers=[
-        LowerBoundSampler(
-            interval_width=0.8,
-            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-            beta_decay="logarithmic_decay",
-            use_local_search=True,
-            c=0.8,
-        ),
-        LowerBoundSampler(
-            interval_width=0.8,
-            adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-            beta_decay="logarithmic_decay",
-            use_local_search=False,
-            c=0.8,
-        ),
-        #         LowerBoundSampler(
-        #     interval_width=0.8,
-        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        #     beta_decay="logarithmic_decay",
-        #     use_local_search=True,
-        #     c=0.6,
-        # ),
-        #         LowerBoundSampler(
-        #     interval_width=0.8,
-        #     adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        #     beta_decay="inverse_square_root_decay",
-        #     use_local_search=True,
-        #     c=0.6,
-        # ),
-            #  ExpectedImprovementSampler(
-            #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-            #             num_ei_samples=1000,
-            #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
-            #             use_local_search=True,
-            #         ),
-            #  ExpectedImprovementSampler(
-            #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-            #             num_ei_samples=1000,
-            #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
-            #             use_local_search=False,
-            #         ),
-        # ThompsonSampler(
-        #     n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-        #     enable_optimistic_sampling=True,
-        #     adapter=LIMITED_ARCHITECTURE_ADAPTER,
-        # ),
-        ],
+        samplers=
+                [
+            LowerBoundSampler(
+                interval_width=0.8,
+                adapter=LIMITED_ARCHITECTURE_ADAPTER,
+                beta_decay="logarithmic_decay",
+                use_local_search=True,
+                local_search_variant=LOCAL_SEARCH_VARIANT,
+                c=0.8,
+            ),
+        ]
+        # + [
+        #     LowerBoundSampler(
+        #         interval_width=0.8,
+        #         adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
+        #         beta_decay="logarithmic_decay",
+        #         use_local_search=True,
+        #         local_search_variant=variant,
+        #         c=0.8,
+        #     )
+        #     for variant in list_local_search_variants()
+        # ]
+        ,
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,
         calibration_split_strategy="train_test_split",
@@ -253,9 +189,9 @@ PRECONFORMAL_ADAPTER = "DtACI"
 PRECONFORMAL_N_QUANTILES = 6
 PRECONFORMAL_COMPARISON_CONFIGURATIONS = []
 for architecture in [
-    "qrf",
-    "qgbm",
+    "ql",
     # "qens5",
+    # "qgp",
 ]:
     # Simulate normal pre-conformal cutoff vs. unreachable one:
     for pre_conformal_trials in [32, 10000]:
@@ -267,21 +203,26 @@ for architecture in [
             build_architecture_variation_configurations(
                 architectures=[architecture],
                 samplers=[
-                    ExpectedImprovementSampler(
-                        n_quantiles=PRECONFORMAL_N_QUANTILES,
-                        num_ei_samples=1000,
-                        adapter=adapter,
-                    ),
-                    ThompsonSampler(
-                        n_quantiles=PRECONFORMAL_N_QUANTILES,
-                        enable_optimistic_sampling=False,
-                        adapter=adapter,
-                    ),
-                    ThompsonSampler(
-                        n_quantiles=PRECONFORMAL_N_QUANTILES,
-                        enable_optimistic_sampling=True,
-                        adapter=adapter,
-                    ),
+        ExpectedImprovementSampler(
+            n_quantiles=PRECONFORMAL_N_QUANTILES,
+            num_ei_samples=1000,
+            adapter=PRECONFORMAL_ADAPTER,
+            use_local_search=True,
+            local_search_variant=LOCAL_SEARCH_VARIANT,
+        ),
+        LowerBoundSampler(
+            interval_width=0.8,
+            adapter=PRECONFORMAL_ADAPTER,
+            beta_decay="logarithmic_decay",
+            use_local_search=True,
+            local_search_variant=LOCAL_SEARCH_VARIANT,
+            c=0.8,
+        ),
+        ThompsonSampler(
+            n_quantiles=PRECONFORMAL_N_QUANTILES,
+            enable_optimistic_sampling=False,
+            adapter=PRECONFORMAL_ADAPTER,
+        )
                 ],
                 n_pre_conformal_trials=pre_conformal_trials,
                 calibration_split_strategy="adaptive",

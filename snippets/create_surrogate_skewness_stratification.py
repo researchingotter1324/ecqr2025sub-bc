@@ -1,36 +1,8 @@
-"""
-Skewness Stratification for HPO Surrogate Benchmarks
-=====================================================
-Selects benchmark tasks whose response-surface exhibits extreme *conditional*
-skewness — i.e. the distribution of the target metric inside local
-hyperparameter-space neighbourhoods is consistently asymmetric.
-
-Score: mean absolute Moors (1988) skewness across all k-NN patches
--------------------------------------------------------------------
-For every point xᵢ we find its k nearest neighbours (Gower distance,
-mixed-type HP space), compute the Moors skewness of the local target values:
-
-    Moors(y_local) = [(Q.875 - Q.625) - (Q.375 - Q.125)] / (Q.875 - Q.125)
-
-then take the *absolute value* (direction of skew is irrelevant; we care only
-about magnitude) and average across all points.  This gives one scalar per
-task that measures how non-symmetric the response surface is on average.
-
-k is adaptive: k = max(20, min(100, n // 20)) — roughly 5 % of n, capped.
-
-Statistical validation
-----------------------
-Mann-Whitney U test (one-sided: selected > rest) on the per-task scores.
-Effect size: Cliff's delta.  No p-value correction applied.
-"""
-
-import os
 import json
+import os
 import warnings
 import logging
 import numpy as np
-import pandas as pd
-from scipy.stats import mannwhitneyu, bootstrap
 from sklearn.neighbors import NearestNeighbors
 
 from stratification_utils import (
@@ -41,132 +13,156 @@ from stratification_utils import (
     save_stratification,
     gower_distance_matrix,
 )
-from plot_utils import group_score_boxplot, target_kde_per_task
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 SEED = 42
-np.random.seed(SEED)
 
-BENCHMARKS = ["rbv2_aknn", "lcbench"]
+BENCHMARKS = ["lcbench"]
 TOP_COUNT = 5
 MAX_PERFECT_ACC_RATIO = 0.05
 MIN_RUNTIME = 8
 
-OUT_ROOT = os.path.join("cache", "snippets_outputs", "skewness")
+MIN_SAMPLES = 40
+MIN_K = 20
+
 SUMMARY_DIR = os.path.join("cache", "snippets_outputs", "summary")
 
 
-# ── Score computation ─────────────────────────────────────────────────────────
+def adaptive_k(num_samples: int) -> int:
+    """Compute an adaptive neighbourhood size for local asymmetry estimation.
 
-def _adaptive_k(num_samples: int) -> int:
-    return max(20, min(100, num_samples // 20))
+    The neighbourhood is set to roughly 5 % of the dataset, capped at 100 to
+    prevent patches from spanning a large fraction of the hyperparameter space
+    and losing local sensitivity.  The lower bound of MIN_SAMPLES // 2 ensures
+    that Q(0.25) in each patch is based on at least 5 order statistics.
 
+    Args:
+        num_samples: Total number of observations in the dataset.
 
-def _moors_skewness(values: np.ndarray) -> float:
+    Returns:
+        Neighbourhood size k in [MIN_K, 100].
     """
-    Moors (1988) quantile skewness, bounded in [-1, 1].
-    Returns 0 when the denominator is effectively zero (degenerate patch).
+    return max(MIN_K, min(100, num_samples // 20))
+
+
+def bowley_asymmetry(patches: np.ndarray) -> np.ndarray:
+    """Compute the Bowley (1920) quartile skewness for each local patch.
+
+    This is the Groeneveld-Meeden (1984) measure evaluated at u = 0.25:
+
+        γ = [Q(0.25) + Q(0.75) − 2·Q(0.5)] / [Q(0.75) − Q(0.25)]
+
+    The numerator measures how far the midpoint of the inter-quartile interval
+    lies from the median; the denominator is the IQR, which normalises γ to
+    (−1, 1) for any distribution with positive spread.  u = 0.25 is the
+    canonical, best-studied instantiation of the Groeneveld-Meeden family and
+    is directly citable from both Bowley (1920) and Groeneveld & Meeden (1984).
+
+    Patches with IQR < 1e-12 (effectively constant distributions) produce a
+    degenerate score and are masked out; the caller receives NaN for those rows
+    and is responsible for filtering them.
+
+    Args:
+        patches: Performance values for every local patch, shape (n, k).
+
+    Returns:
+        Per-patch Bowley asymmetry, shape (n,).  Degenerate patches yield NaN.
     """
-    q = np.quantile(values, [0.125, 0.375, 0.625, 0.875])
-    spread = q[3] - q[0]
-    if spread < 1e-12:
-        return 0.0
-    return ((q[3] - q[2]) - (q[1] - q[0])) / spread
+    q25 = np.quantile(patches, 0.25, axis=1)
+    q50 = np.quantile(patches, 0.50, axis=1)
+    q75 = np.quantile(patches, 0.75, axis=1)
+    iqr = q75 - q25
+    degenerate = iqr < 1e-12
+    gamma = np.where(degenerate, np.nan, (q25 + q75 - 2.0 * q50) / np.where(degenerate, 1.0, iqr))
+    return gamma
 
 
-def mean_absolute_local_skewness(
-    configs: np.ndarray,
-    feature_groups: list,
+def mean_absolute_local_asymmetry(
+    X_num: np.ndarray,
+    X_cat_str: np.ndarray,
     performance: np.ndarray,
 ) -> float:
+    """Compute the mean absolute local asymmetry of the performance surface.
+
+    For each observed configuration, its k nearest neighbours in hyperparameter
+    space are identified using Gower (1971) distance. Gower distance handles
+    mixed-type hyperparameter spaces without requiring a user-defined scale and
+    guarantees each original hyperparameter contributes equally regardless of
+    category count or measurement scale.
+
+    Within each local patch the Bowley (1920) quartile asymmetry is computed
+    (see bowley_asymmetry). The anchor point is excluded from its own patch by
+    requesting k+1 neighbours and dropping the self at distance 0.
+
+    Args:
+        X_num: Numeric feature matrix, shape (n, n_numeric).
+        X_cat_str: Categorical feature matrix, shape (n, n_cat), dtype object.
+            Raw string values — no OHE required.
+        performance: Observed performance values, shape (n,).
+
+    Returns:
+        Mean absolute Bowley asymmetry over all non-degenerate patches, in [0, 1).
+
+    Raises:
+        ValueError: If fewer than MIN_SAMPLES observations are present, or if
+            all patches are degenerate (constant performance surface).
     """
-    Compute the mean |Moors skewness| over all k-NN local patches.
+    n = len(performance)
+    if n < MIN_SAMPLES:
+        raise ValueError(
+            f"Insufficient samples for asymmetry scoring: {n} < {MIN_SAMPLES}."
+        )
 
-    Uses Gower distance so that the mixed-type HP space is handled correctly —
-    each hyperparameter (continuous, integer, or categorical) contributes
-    equally regardless of its cardinality or encoding width.
+    distance_matrix = gower_distance_matrix(X_num, X_cat_str)
+    k = adaptive_k(n)
 
-    Returns 0.0 if there are too few samples to form meaningful patches.
-    """
-    num_samples = len(performance)
-    if num_samples < 40:
-        return 0.0
-
-    distance_matrix = gower_distance_matrix(configs, feature_groups)
-    k = _adaptive_k(num_samples)
-
-    nbrs = NearestNeighbors(n_neighbors=k, metric="precomputed", algorithm="brute")
+    nbrs = NearestNeighbors(n_neighbors=k + 1, metric="precomputed", algorithm="brute")
     nbrs.fit(distance_matrix)
     _, neighbour_indices = nbrs.kneighbors(distance_matrix)
+    neighbour_indices = neighbour_indices[:, 1:]
 
-    local_skewness_values = np.array(
-        [abs(_moors_skewness(performance[idx])) for idx in neighbour_indices]
-    )
-    return float(np.mean(local_skewness_values))
+    patches = np.stack([performance[idx] for idx in neighbour_indices])
+    gamma = bowley_asymmetry(patches)
 
+    valid = ~np.isnan(gamma)
+    if not valid.any():
+        raise ValueError(
+            "All local patches have zero IQR; performance surface is constant."
+        )
 
-# ── Statistical validation ────────────────────────────────────────────────────
+    return float(np.abs(gamma[valid]).mean())
 
-def _cliffs_delta(group_a: np.ndarray, group_b: np.ndarray) -> float:
-    """Cliff's delta ∈ [-1, 1]: P(a > b) - P(b > a)."""
-    dominance = sum(
-        1 if a > b else (-1 if a < b else 0)
-        for a in group_a for b in group_b
-    )
-    return dominance / (len(group_a) * len(group_b))
-
-
-def compare_selected_vs_rest(
-    selected_task_ids: list,
-    score_by_task: dict,
-) -> dict:
-    """
-    Mann-Whitney U test (one-sided: selected scores > rest scores) and
-    Cliff's delta effect size.
-    """
-    selected_scores = np.array([score_by_task[t] for t in selected_task_ids if t in score_by_task])
-    rest_scores = np.array([score_by_task[t] for t in score_by_task if t not in selected_task_ids])
-
-    if len(selected_scores) < 2 or len(rest_scores) < 2:
-        return {"note": "insufficient tasks for statistical comparison"}
-
-    u_stat, p_value = mannwhitneyu(selected_scores, rest_scores, alternative="greater")
-    delta = _cliffs_delta(selected_scores, rest_scores)
-
-    return {
-        "n_selected":             len(selected_scores),
-        "n_rest":                 len(rest_scores),
-        "selected_score_median":  float(np.median(selected_scores)),
-        "rest_score_median":      float(np.median(rest_scores)),
-        "mwu_statistic":          float(u_stat),
-        "mwu_p_value":            float(p_value),
-        "cliffs_delta":           float(delta),
-    }
-
-
-# ── Per-benchmark stratification ──────────────────────────────────────────────
 
 def score_and_select_tasks(
     benchmark: str,
     task_ids: list,
     top_count: int,
-) -> tuple[list, dict, dict]:
-    """
-    Score every valid task in the benchmark and return the top-scoring ones.
+) -> tuple[list, dict]:
+    """Score every valid task in the benchmark and select the top-scoring ones.
 
-    Returns
-    -------
-    selected_task_ids : list[str]
-    score_by_task     : dict[task_id -> float]   (all scored tasks)
-    performance_by_task : dict[task_id -> np.ndarray]  (for plotting)
+    Tasks that fail dataset validation are skipped silently (validation failure
+    is expected and not an error).  Tasks where mean_absolute_local_asymmetry
+    raises a ValueError are logged as warnings and excluded from the scored pool.
+    Both cases result in the task being absent from the analysis entirely; no
+    sentinel score is injected.
+
+    Args:
+        benchmark: YAHPO benchmark scenario name (e.g. "lcbench").
+        task_ids: List of task/instance identifiers to evaluate.
+        top_count: Number of highest-scoring tasks to select.
+
+    Returns:
+        Tuple of (selected_task_ids, score_by_task) where selected_task_ids is
+        the list of selected task IDs and score_by_task maps every scored task
+        ID to its asymmetry score.
     """
     score_by_task = {}
-    performance_by_task = {}
 
     for task_id in task_ids:
-        configs, feature_groups, performance, runtimes = sample_benchmark_data(
+        X_num, X_cat_str, _num_names, _cat_names, performance, runtimes = sample_benchmark_data(
             benchmark_name=benchmark, task_id=task_id
         )
         if not validate_dataset(
@@ -177,65 +173,47 @@ def score_and_select_tasks(
         ):
             continue
 
-        score = mean_absolute_local_skewness(configs, feature_groups, performance)
-        if score > 0:
-            score_by_task[task_id] = score
-            performance_by_task[task_id] = performance
+        try:
+            score = mean_absolute_local_asymmetry(X_num, X_cat_str, performance)
+        except ValueError as exc:
+            logger.warning("Skipping task %s (%s): %s", task_id, benchmark, exc)
+            continue
+
+        score_by_task[task_id] = score
 
     selected_task_ids = select_top_datasets(scores=score_by_task, top_count=top_count)
-    return selected_task_ids, score_by_task, performance_by_task
+    return selected_task_ids, score_by_task
 
 
-# ── Summary table ─────────────────────────────────────────────────────────────
+def save_boxplot_data(selected_scores: list, rest_scores: list, benchmark: str):
+    """Write the selected/rest score arrays for one benchmark to a JSON file.
 
-def save_summary_csv(
-    selected_task_ids: list,
-    score_by_task: dict,
-    performance_by_task: dict,
-    test_result: dict,
-    benchmark: str,
-):
-    rows = []
-    for task_id, performance in performance_by_task.items():
-        q25, q50, q75 = np.quantile(performance, [0.25, 0.50, 0.75])
-        mean_ci = bootstrap(
-            (performance,), np.mean,
-            confidence_level=0.95, n_resamples=999,
-            random_state=SEED, method="percentile",
-        ).confidence_interval
-        rows.append({
-            "task_id":          task_id,
-            "selected":         task_id in selected_task_ids,
-            "mean_abs_moors":   round(score_by_task[task_id], 6),
-            "n":                len(performance),
-            "mean_perf":        round(float(np.mean(performance)), 6),
-            "mean_perf_ci_lo":  round(float(mean_ci.low), 6),
-            "mean_perf_ci_hi":  round(float(mean_ci.high), 6),
-            "median_perf":      round(float(q50), 6),
-            "iqr_perf":         round(float(q75 - q25), 6),
-        })
+    The file is read by create_stratification_boxplots.py to produce the
+    combined figure without re-running the scoring pipeline.
 
-    df = pd.DataFrame(rows).sort_values("mean_abs_moors", ascending=False)
+    Args:
+        selected_scores: Asymmetry scores for the selected tasks.
+        rest_scores: Asymmetry scores for the non-selected tasks.
+        benchmark: Benchmark name, used to construct the output filename.
+    """
     os.makedirs(SUMMARY_DIR, exist_ok=True)
-    df.to_csv(os.path.join(SUMMARY_DIR, f"skewness_summary_{benchmark}.csv"), index=False)
+    path = os.path.join(SUMMARY_DIR, f"asymmetry_boxplot_{benchmark}.json")
+    with open(path, "w") as fh:
+        json.dump({"selected_scores": selected_scores, "rest_scores": rest_scores}, fh, indent=2)
 
-    test_path = os.path.join(SUMMARY_DIR, f"skewness_group_test_{benchmark}.json")
-    with open(test_path, "w") as fh:
-        json.dump(test_result, fh, indent=2, default=str)
-
-
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    np.random.seed(SEED)
+    """Run the local asymmetry stratification for all configured benchmarks.
 
-    # Accumulate results across benchmarks so both plots are produced in one call
-    boxplot_data = {}
-    kde_data = {}
+    For each benchmark, scores every valid task, saves the stratification JSON
+    and a JSON file with the selected/rest score arrays for downstream boxplot
+    generation.
+    """
+    np.random.seed(SEED)
 
     for benchmark in BENCHMARKS:
         task_ids = get_benchmark_task_ids(benchmark_name=benchmark)
-        selected, score_by_task, performance_by_task = score_and_select_tasks(
+        selected, score_by_task = score_and_select_tasks(
             benchmark=benchmark,
             task_ids=task_ids,
             top_count=TOP_COUNT,
@@ -247,38 +225,13 @@ def main():
             task_ids=selected,
             output_file=f"top_asymmetric_datasets_{benchmark}.json",
         )
-
-        test_result = compare_selected_vs_rest(selected, score_by_task)
-        save_summary_csv(selected, score_by_task, performance_by_task, test_result, benchmark)
-
-        boxplot_data[benchmark] = {
-            "selected_scores": [score_by_task[t] for t in selected if t in score_by_task],
-            "rest_scores":     [score_by_task[t] for t in score_by_task if t not in selected],
-            "mwu_p_value":     test_result.get("mwu_p_value", float("nan")),
-            "cliffs_delta":    test_result.get("cliffs_delta", float("nan")),
-        }
-        kde_data[benchmark] = {
-            "selected_task_ids": selected,
-            "task_performance":  performance_by_task,
-        }
+        save_boxplot_data(
+            selected_scores=[score_by_task[t] for t in selected if t in score_by_task],
+            rest_scores=[score_by_task[t] for t in score_by_task if t not in selected],
+            benchmark=benchmark,
+        )
 
         print(f"[{benchmark}] selected: {selected}")
-        print(f"  MWU p = {test_result.get('mwu_p_value', 'N/A'):.4e}  "
-              f"Cliff's delta = {test_result.get('cliffs_delta', 'N/A'):.3f}")
-
-    # One figure per plot type, covering all benchmarks as columns
-    if boxplot_data:
-        os.makedirs(OUT_ROOT, exist_ok=True)
-        group_score_boxplot(
-            results_by_benchmark=boxplot_data,
-            score_label="|Moors skewness score| (mean over patches)",
-            out_path=os.path.join(OUT_ROOT, "selected_vs_rest_scores"),
-        )
-    if kde_data:
-        target_kde_per_task(
-            results_by_benchmark=kde_data,
-            out_path=os.path.join(OUT_ROOT, "task_performance_distributions"),
-        )
 
 
 if __name__ == "__main__":

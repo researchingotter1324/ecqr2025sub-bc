@@ -1,4 +1,5 @@
 from typing import Union, Optional, List, Any
+import warnings
 from hpobench.config.config_types import CCQRModel
 
 try:
@@ -201,9 +202,19 @@ def build_architecture_variation_configurations(
     Returns:
         List of tuning configuration objects for each architecture and sampler combination.
     """
+    INCOMPATIBLE_WITH_EI = {"qrf", "qgbm", "qleaf"}
+    
     configs = []
     for arch in architectures:
         for sampler in samplers:
+            if isinstance(sampler, ExpectedImprovementSampler) and arch in INCOMPATIBLE_WITH_EI:
+                warnings.warn(
+                    f"Skipping incompatible combination: architecture '{arch}' is not compatible "
+                    f"with ExpectedImprovementSampler. This combination will be excluded from configurations.",
+                    UserWarning
+                )
+                continue
+            
             sampler_copy = deepcopy(sampler)
             searcher = QuantileConformalSearcher(
                 quantile_estimator_architecture=arch,

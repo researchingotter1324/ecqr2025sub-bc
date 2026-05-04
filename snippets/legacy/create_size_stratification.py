@@ -1,5 +1,5 @@
 import json
-from typing import List, Union
+from typing import List, Optional, Union
 import warnings
 import time
 import threading
@@ -69,7 +69,7 @@ def _fetch_dataset_size_internal(task_id: str) -> int:
 
 def fetch_dataset_size(
     task_id: str, max_retries: int = 3, delay: float = 1.0, timeout_seconds: int = 60
-) -> int:
+) -> Optional[int]:
     """Fetch dataset size with retry logic and timeout for API failures."""
     for attempt in range(max_retries):
         try:
