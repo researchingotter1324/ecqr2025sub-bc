@@ -29,14 +29,13 @@ experiment_params = ExperimentParameters()
 
 # Granular run section control
 run_sections = {
-    "run_coverage_analysis": False,
+    "run_coverage_analysis": True,
     "run_architecture_variation_analysis": True,
     "run_external_tuning_analysis": True,
     "run_categorical_external_tuning_analysis": True,
-    "run_heteroscedastic_external_tuning_analysis": True,
-    "run_skew_external_tuning_analysis": True,
-    "run_preconformal_comparison_analysis": False,
-    "run_static_analysis": False,
+    "run_heteroscedastic_external_tuning_analysis": False,
+    "run_skew_external_tuning_analysis": False,
+    "run_preconformal_comparison_analysis": True,
     "run_quantile_count_comparison": False,
     "run_search_tuning_effect_comparison": False,
 }

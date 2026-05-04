@@ -9,22 +9,18 @@ try:
         ExpectedImprovementSampler,
     )
     from ccqr_optimization.selection.sampling.thompson_samplers import ThompsonSampler
-    from ccqr_optimization.selection.sampling.local_search import list_local_search_variants
 except ImportError:
     raise ImportError(
         "ccqr_optimization is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
     )
 from hpobench.config.utils import (
     get_external_tuning_configurations,
-    build_sampler_variation_configurations,
     build_architecture_variation_configurations,
 )
 from hpobench.config.config_types import (
     TunerConfig,
     CCQRModel,
 )
-
-LOCAL_SEARCH_VARIANT = "dfo3__adaptive_narrow"
 
 # 2. Coverage analysis configurations:
 COVERAGE_ANALYSIS_CONFIGURATIONS = []
@@ -124,14 +120,12 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             num_ei_samples=1000,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
             use_local_search=True,
-            local_search_variant=LOCAL_SEARCH_VARIANT,
         ),
         LowerBoundSampler(
             interval_width=0.8,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
             beta_decay="logarithmic_decay",
             use_local_search=True,
-            local_search_variant=LOCAL_SEARCH_VARIANT,
             c=0.8,
         ),
         ThompsonSampler(
@@ -162,21 +156,10 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
                 adapter=LIMITED_ARCHITECTURE_ADAPTER,
                 beta_decay="logarithmic_decay",
                 use_local_search=True,
-                local_search_variant=LOCAL_SEARCH_VARIANT,
                 c=0.8,
             ),
         ]
-        # + [
-        #     LowerBoundSampler(
-        #         interval_width=0.8,
-        #         adapter=SAMPLER_VARIATION_DEFAULT_ADAPTER,
-        #         beta_decay="logarithmic_decay",
-        #         use_local_search=True,
-        #         local_search_variant=variant,
-        #         c=0.8,
-        #     )
-        #     for variant in list_local_search_variants()
-        # ]
+
         ,
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,
@@ -208,14 +191,12 @@ for architecture in [
             num_ei_samples=1000,
             adapter=PRECONFORMAL_ADAPTER,
             use_local_search=True,
-            local_search_variant=LOCAL_SEARCH_VARIANT,
         ),
         LowerBoundSampler(
             interval_width=0.8,
             adapter=PRECONFORMAL_ADAPTER,
             beta_decay="logarithmic_decay",
             use_local_search=True,
-            local_search_variant=LOCAL_SEARCH_VARIANT,
             c=0.8,
         ),
         ThompsonSampler(
