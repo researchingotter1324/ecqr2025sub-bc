@@ -628,6 +628,7 @@ def smac_tune(
     random_state: Optional[int] = None,
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
+    n_candidates: int = N_CANDIDATES,
 ) -> pd.DataFrame:
     """Runs Bayesian optimization using SMAC3 with Random Forest surrogate and acquisition functions.
 
@@ -676,9 +677,13 @@ def smac_tune(
     )
 
     if searcher == "LSMAC-EI":
-        acquisition_maximizer = HyperparameterOptimizationFacade.get_acquisition_maximizer(scenario)
+        acquisition_maximizer = HyperparameterOptimizationFacade.get_acquisition_maximizer(
+            scenario, challengers=n_candidates
+        )
     else:
-        acquisition_maximizer = RandomSearch(scenario.configspace)
+        acquisition_maximizer = RandomSearch(
+            scenario.configspace, challengers=n_candidates
+        )
 
     # Create SMAC facade with fair comparison settings
     smac = HyperparameterOptimizationFacade(
@@ -696,6 +701,9 @@ def smac_tune(
         ),
         initial_design=HyperparameterOptimizationFacade.get_initial_design(
             scenario, n_configs=0 if warm_start_configs else None
+        ),
+        config_selector=HyperparameterOptimizationFacade.get_config_selector(
+            scenario, retrain_after=1
         ),
         overwrite=True,
     )
@@ -786,6 +794,7 @@ def tune(
         )
     elif tuner_config.tuner.backend == "smac":
         history = smac_tune(
+            n_candidates=N_CANDIDATES,
             **shared_kwargs,
         )
     else:
