@@ -252,9 +252,7 @@ def _process_single_experiment_config(
             if tuner.tuner.backend == "ccqr_optimization":
                 sampler = tuner.tuner.searcher.sampler
                 sampler_name = sampler.__class__.__name__
-                use_local_search_ccqr = bool(
-                    getattr(sampler, "use_local_search", False)
-                )
+                use_local_search_ccqr = getattr(sampler, "local_search", None) is not None
 
                 if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
                     confidence_level = _fmt_float(sampler.interval_width)
@@ -294,7 +292,7 @@ def _process_single_experiment_config(
             else:
                 # NOTE: Use "" instead of None or NaN to avoid bad groupby behavior
                 sampler_name = ""
-                use_local_search_ccqr = False
+                use_local_search_ccqr = False  # non-ccqr backends never have local search
                 confidence_level = ""
                 estimator_architecture = ""
                 n_pre_conformal_trials = ""
@@ -329,13 +327,10 @@ def _process_single_experiment_config(
                         parts.append("".join(p[0] for p in decay_parts))
                     if parts:
                         aliased_sampler_name = f"{aliased_sampler_name}-{'_'.join(parts)}"
-            if (
-                tuner.tuner.backend == "ccqr_optimization"
-                and use_local_search_ccqr
-            ):
-                aliased_estimator_architecture = (
-                    f"L{aliased_estimator_architecture}"
-                )
+            if tuner.tuner.backend == "ccqr_optimization" and use_local_search_ccqr:
+                local_search_obj = getattr(tuner.tuner.searcher.sampler, "local_search", None)
+                ls_tag = type(local_search_obj).__name__ if local_search_obj is not None else "LS"
+                aliased_sampler_name = f"{ls_tag}-{aliased_sampler_name}"
             historical_performance[
                 "estimator_architecture"
             ] = aliased_estimator_architecture

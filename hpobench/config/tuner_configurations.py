@@ -4,17 +4,22 @@ try:
     )
     from ccqr_optimization.selection.sampling.bound_samplers import (
         LowerBoundSampler,
+        PessimisticLowerBoundSampler,
     )
     from ccqr_optimization.selection.sampling.expected_improvement_samplers import (
         ExpectedImprovementSampler,
     )
     from ccqr_optimization.selection.sampling.thompson_samplers import ThompsonSampler
+    from ccqr_optimization.selection.sampling.local_search.smac_search import SmacLocalSearch
+    from ccqr_optimization.selection.sampling.local_search.dfo_search import DFOLocalSearch
+    from ccqr_optimization.selection.sampling.local_search.mies_search import MiesLocalSearch
 except ImportError:
     raise ImportError(
         "ccqr_optimization is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
     )
 from hpobench.config.utils import (
     get_external_tuning_configurations,
+    get_non_local_external_tuning_configurations,
     build_architecture_variation_configurations,
 )
 from hpobench.config.config_types import (
@@ -35,7 +40,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=adapter,
             c=0,
-            use_local_search=False,
+            local_search=None,
         )
         split_conformal_searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=COVERAGE_ANALYSIS_ARCHITECTURE,
@@ -60,7 +65,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=adapter,
             c=0,
-            use_local_search=False,
+            local_search=None,
         )
         cv_conformal_searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=COVERAGE_ANALYSIS_ARCHITECTURE,
@@ -89,7 +94,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             interval_width=interval_width,
             adapter=None,
             c=0,
-            use_local_search=False,
+            local_search=None,
         ),
         n_pre_conformal_trials=10000,
         n_calibration_folds=3,
@@ -119,13 +124,13 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
             num_ei_samples=1000,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
-            use_local_search=True,
+            local_search=SmacLocalSearch(),
         ),
         LowerBoundSampler(
             interval_width=0.8,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
             beta_decay="logarithmic_decay",
-            use_local_search=True,
+            local_search=SmacLocalSearch(),
             c=0.8,
         ),
         ThompsonSampler(
@@ -137,6 +142,36 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
     calibration_split_strategy="train_test_split",
 )
 
+# 9. Lower-bound sampler ablations:
+LOWERBOUND_ABLATION_ADAPTER = "DtACI"
+LOWERBOUND_ABLATION_CONFIGURATIONS = build_architecture_variation_configurations(
+    architectures=[
+        "ql",
+        "qleaf",
+        "qgbm",
+        "qgp",
+        "qens5",
+    ],
+    samplers=[
+        # --- logarithmic_decay: vary c and interval_width ---
+        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.2, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.2, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.8, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=2.0, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=2.0, local_search=SmacLocalSearch()),
+        # --- inverse_square_root_decay: vary c and interval_width ---
+        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=0.2, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=0.8, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=2.0, local_search=SmacLocalSearch()),
+        # --- no decay (beta fixed at 1): vary interval_width ---
+        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay=None,                       c=1.0, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay=None,                       c=1.0, local_search=SmacLocalSearch()),
+        # --- pessimistic baseline (no LCB, pure lower-bound scoring) ---
+        PessimisticLowerBoundSampler(interval_width=0.8, adapter=LOWERBOUND_ABLATION_ADAPTER, local_search=SmacLocalSearch()),
+    ],
+    calibration_split_strategy="train_test_split",
+)
+
 # 5. Limited architecture configurations:
 LIMITED_ARCHITECTURE_ADAPTER = "DtACI"
 LIMITED_ARCHITECTURE_N_QUANTILES = 6
@@ -144,23 +179,68 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
             # "qgp",
-            # "qgbm",
+            "qgbm",
             # "qleaf",
             "qens5",
             # "qrf",
         ],
-        samplers=
-                [
+        samplers=[
             LowerBoundSampler(
                 interval_width=0.8,
                 adapter=LIMITED_ARCHITECTURE_ADAPTER,
                 beta_decay="logarithmic_decay",
-                use_local_search=True,
                 c=0.8,
+                local_search=None,
             ),
-        ]
+            LowerBoundSampler(
+                interval_width=0.8,
+                adapter=LIMITED_ARCHITECTURE_ADAPTER,
+                beta_decay="logarithmic_decay",
+                c=0.8,
+                local_search=SmacLocalSearch(),
+            ),
+            LowerBoundSampler(
+                interval_width=0.8,
+                adapter=LIMITED_ARCHITECTURE_ADAPTER,
+                beta_decay="logarithmic_decay",
+                c=0.8,
+                local_search=DFOLocalSearch(),
+            ),
+            LowerBoundSampler(
+                interval_width=0.8,
+                adapter=LIMITED_ARCHITECTURE_ADAPTER,
+                beta_decay="logarithmic_decay",
+                c=0.8,
+                local_search=MiesLocalSearch(),
+            ),
+        ],
+        n_pre_conformal_trials=32,
+        searcher_tuning_framework=None,
+        calibration_split_strategy="train_test_split",
+    )
+)
 
-        ,
+# 5b. Limited non-local architecture configurations:
+LIMITED_NON_LOCAL_ARCHITECTURE_ADAPTER = "DtACI"
+LIMITED_NON_LOCAL_ARCHITECTURE_N_QUANTILES = 6
+LIMITED_NON_LOCAL_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
+    build_architecture_variation_configurations(
+        architectures=[
+            # "qgp",
+            "qgbm",
+            # "qleaf",
+            "qens5",
+            # "qrf",
+        ],
+        samplers=[
+            LowerBoundSampler(
+                interval_width=0.8,
+                adapter=LIMITED_NON_LOCAL_ARCHITECTURE_ADAPTER,
+                beta_decay="logarithmic_decay",
+                c=0.8,
+                local_search=None,
+            ),
+        ],
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,
         calibration_split_strategy="train_test_split",
@@ -173,8 +253,8 @@ PRECONFORMAL_N_QUANTILES = 6
 PRECONFORMAL_COMPARISON_CONFIGURATIONS = []
 for architecture in [
     "ql",
-    # "qens5",
-    # "qgp",
+    "qens5",
+    "qgp",
 ]:
     # Simulate normal pre-conformal cutoff vs. unreachable one:
     for pre_conformal_trials in [32, 10000]:
@@ -190,13 +270,13 @@ for architecture in [
             n_quantiles=PRECONFORMAL_N_QUANTILES,
             num_ei_samples=1000,
             adapter=PRECONFORMAL_ADAPTER,
-            use_local_search=True,
+            local_search=SmacLocalSearch(),
         ),
         LowerBoundSampler(
             interval_width=0.8,
             adapter=PRECONFORMAL_ADAPTER,
             beta_decay="logarithmic_decay",
-            use_local_search=True,
+            local_search=SmacLocalSearch(),
             c=0.8,
         ),
         ThompsonSampler(
@@ -272,3 +352,4 @@ for searcher_tuning_framework in [None, "fixed"]:
     )
 
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
+NON_LOCAL_EXTERNAL_TUNING_CONFIGURATIONS = get_non_local_external_tuning_configurations()

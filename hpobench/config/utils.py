@@ -9,6 +9,7 @@ try:
     from copy import deepcopy
     from ccqr_optimization.selection.sampling.bound_samplers import (
         LowerBoundSampler,
+        PessimisticLowerBoundSampler,
     )
     from ccqr_optimization.selection.sampling.expected_improvement_samplers import (
         ExpectedImprovementSampler,
@@ -74,6 +75,11 @@ def create_searcher_config_id(
     sampler_class_name = sampler.__class__.__name__
     sampler_acronym = "".join(c for c in sampler_class_name if c.isupper())
 
+    local_search_obj = getattr(sampler, "local_search", None)
+    if local_search_obj is not None:
+        ls_tag = type(local_search_obj).__name__
+        sampler_acronym = f"{ls_tag}-{sampler_acronym}"
+
     adapter_name = None
     if hasattr(sampler, "adapters") and sampler.adapters:
         adapter_name = sampler.adapters[0].__class__.__name__
@@ -85,8 +91,6 @@ def create_searcher_config_id(
 
     if quantile_arch:
         quantile_arch_upper = quantile_arch.upper()
-        if getattr(sampler, "use_local_search", False):
-            quantile_arch_upper = f"L{quantile_arch_upper}"
         if adapter_name:
             config_id += f"{quantile_arch_upper}-{adapter_name} {sampler_acronym}"
         else:
@@ -135,6 +139,7 @@ def build_sampler_variation_configurations(
         Union[
             ThompsonSampler,
             LowerBoundSampler,
+            PessimisticLowerBoundSampler,
             ExpectedImprovementSampler,
         ]
     ],
@@ -183,6 +188,7 @@ def build_architecture_variation_configurations(
         Union[
             ThompsonSampler,
             LowerBoundSampler,
+            PessimisticLowerBoundSampler,
             ExpectedImprovementSampler,
         ]
     ],
@@ -243,28 +249,47 @@ def get_external_tuning_configurations() -> List[TunerConfig]:
         List of external tuning configuration objects (e.g., for optuna, smac).
     """
     return [
+               TunerConfig(
+            tuner=OptunaModel(backend="optuna", searcher="LGP"),
+            tuner_identifier="LGP-EI",
+        ),
+        TunerConfig(
+            tuner=OptunaModel(backend="optuna", searcher="TPE"),
+            tuner_identifier="TPE",
+        ),
+        TunerConfig(
+            tuner=OptunaModel(backend="optuna", searcher="random"),
+            tuner_identifier="RS",
+        ),
+        TunerConfig(
+            tuner=SMACModel(backend="smac", searcher="LSMAC-EI"),
+            tuner_identifier="LSMAC",
+        ),
+    ]
+
+
+def get_non_local_external_tuning_configurations() -> List[TunerConfig]:
+    """Get non-local external (non-ccqr_optimization) tuning configurations for baseline comparison.
+
+    Returns:
+        List of external tuning configuration objects (e.g., for optuna, smac).
+    """
+    return [
         TunerConfig(
             tuner=OptunaModel(backend="optuna", searcher="GP"),
             tuner_identifier="GP-EI",
         ),
         TunerConfig(
-            tuner=OptunaModel(backend="optuna", searcher="LGP"),
-            tuner_identifier="LGP-EI",
+            tuner=OptunaModel(backend="optuna", searcher="TPE"),
+            tuner_identifier="TPE",
         ),
-        # TunerConfig(
-        #     tuner=OptunaModel(backend="optuna", searcher="TPE"),
-        #     tuner_identifier="TPE",
-        # ),
-        # TunerConfig(
-        #     tuner=OptunaModel(backend="optuna", searcher="random"),
-        #     tuner_identifier="RS",
-        # ),
-        # TunerConfig(
-        #     tuner=SMACModel(backend="smac", searcher="SMAC-EI"),
-        #     tuner_identifier="SMAC",
-        # ),
-        # TunerConfig(
-        #     tuner=SMACModel(backend="smac", searcher="LSMAC-EI"),
-        #     tuner_identifier="LSMAC",
-        # ),
+        TunerConfig(
+            tuner=OptunaModel(backend="optuna", searcher="random"),
+            tuner_identifier="RS",
+        ),
+        TunerConfig(
+            tuner=SMACModel(backend="smac", searcher="SMAC-EI"),
+            tuner_identifier="SMAC",
+        ),
+
     ]

@@ -37,7 +37,7 @@ class ExperimentParameters(BaseModel):
 class Aliases(BaseModel):
     """Human-readable aliases for various benchmark components.
 
-    Args:
+    Args: 
         sampler_aliases: Short names for conformal prediction samplers.
         architecture_aliases: Short names for quantile estimator architectures.
         benchmark_aliases: Display names for benchmark suites.

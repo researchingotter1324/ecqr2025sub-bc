@@ -329,7 +329,10 @@ def plot_benchmark_data(
                     add_markers=add_markers,
                 )
 
-            if share_y_axis:
+            if subset.empty:
+                ax.set_xticks([])
+                ax.set_yticks([])
+            elif share_y_axis:
                 ax.set_ylim((global_y_min, global_y_max))
             else:
                 y_min, y_max = _get_y_bounds(subset, y_col, y_col_lower, y_col_upper)
@@ -378,17 +381,22 @@ def plot_benchmark_data(
             # X labels: bottom row only (i == len(row_values) - 1)
             if i == len(row_values) - 1:
                 ax.set_xlabel(x_label_to_use, fontsize=13)
-            ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
-            # Thicker axis lines for academic style
-            ax.spines["top"].set_linewidth(1.2)
-            ax.spines["right"].set_linewidth(1.2)
-            ax.spines["bottom"].set_linewidth(1.2)
-            ax.spines["left"].set_linewidth(1.2)
-            # Set tick parameters for readability
-            ax.tick_params(
-                axis="both", which="major", labelsize=11, length=6, width=1.2
-            )
-            ax.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+            
+            if not subset.empty:
+                ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+                # Thicker axis lines for academic style
+                ax.spines["top"].set_linewidth(1.2)
+                ax.spines["right"].set_linewidth(1.2)
+                ax.spines["bottom"].set_linewidth(1.2)
+                ax.spines["left"].set_linewidth(1.2)
+                # Set tick parameters for readability
+                ax.tick_params(
+                    axis="both", which="major", labelsize=11, length=6, width=1.2
+                )
+                ax.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+            else:
+                for spine in ax.spines.values():
+                    spine.set_visible(False)
 
     # Add legend below the chart, ensuring no overlap with chart or x label
     handles, labels = ax.get_legend_handles_labels()
@@ -938,25 +946,10 @@ def plot_paired_rank_and_cd(
                     entity_col=entity_col,
                 )
             else:
-                reason = (
-                    f"No data available\nfor budget={cd_budget}"
-                    if cd_data.empty
-                    else "Insufficient datasets\nfor significance testing"
-                )
-                ax_matrix.text(
-                    0.5,
-                    0.5,
-                    reason,
-                    ha="center",
-                    va="center",
-                    transform=ax_matrix.transAxes,
-                    fontsize=12,
-                )
-                ax_matrix.set_title(
-                    f"{row_value}", fontsize=13, fontweight="normal", pad=20
-                )
                 ax_matrix.set_xticks([])
                 ax_matrix.set_yticks([])
+                for spine in ax_matrix.spines.values():
+                    spine.set_visible(False)
         else:
             # Original CD diagram logic
             ax_cd_uncorrected = axes[i][1]
@@ -982,28 +975,14 @@ def plot_paired_rank_and_cd(
                     p_value_column="p_value_corrected",
                 )
             else:
-                reason = (
-                    f"No data available\nfor budget={cd_budget}"
-                    if cd_data.empty
-                    else "Insufficient datasets\nfor significance testing\n(<3 datasets)"
-                )
                 for ax_cd, title_suffix in [
                     (ax_cd_uncorrected, "(Uncorrected)"),
                     (ax_cd_corrected, "(Corrected)"),
                 ]:
-                    ax_cd.text(
-                        0.5,
-                        0.5,
-                        reason,
-                        ha="center",
-                        va="center",
-                        transform=ax_cd.transAxes,
-                        fontsize=10,
-                    )
-                    title = f"CD @{cd_budget}% {title_suffix}"
-                    if ax_cd == ax_cd_uncorrected:
-                        title = f"{row_value}\n" + title
-                    ax_cd.set_title(title, fontsize=13, pad=20)
+                    ax_cd.set_xticks([])
+                    ax_cd.set_yticks([])
+                    for spine in ax_cd.spines.values():
+                        spine.set_visible(False)
 
             # Clean up CD axis appearance
             for ax_cd in [ax_cd_uncorrected, ax_cd_corrected]:

@@ -1,11 +1,14 @@
 from hpobench.config.tuner_configurations import (
     PRECONFORMAL_COMPARISON_CONFIGURATIONS,
     EXTERNAL_TUNING_CONFIGURATIONS,
+    NON_LOCAL_EXTERNAL_TUNING_CONFIGURATIONS,
     LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS,
+    LIMITED_NON_LOCAL_ARCHITECTURE_VARIATION_CONFIGURATIONS,
     ARCHITECTURE_VARIATION_CONFIGURATIONS,
     COVERAGE_ANALYSIS_CONFIGURATIONS,
     QUANTILE_COUNT_VARIATION_CONFIGURATIONS,
     SEARCH_TUNING_EFFECT_CONFIGURATIONS,
+    LOWERBOUND_ABLATION_CONFIGURATIONS,
 )
 from hpobench.config.constants import ExperimentParameters
 from hpobench.report.analyze import (
@@ -29,15 +32,16 @@ experiment_params = ExperimentParameters()
 
 # Granular run section control
 run_sections = {
-    "run_coverage_analysis": True,
-    "run_architecture_variation_analysis": True,
+    # "run_lowerbound_ablations": True,
+    # "run_coverage_analysis": True,
+    # "run_architecture_variation_analysis": True,
+    # "run_categorical_external_tuning_analysis": True,
+    # "run_skew_and_heteroscedastic_external_tuning_analysis": True,
     "run_external_tuning_analysis": True,
-    "run_categorical_external_tuning_analysis": True,
-    "run_heteroscedastic_external_tuning_analysis": False,
-    "run_skew_external_tuning_analysis": False,
-    "run_preconformal_comparison_analysis": True,
-    "run_quantile_count_comparison": False,
-    "run_search_tuning_effect_comparison": False,
+    "run_non_local_external_tuning_analysis": True,
+    # "run_preconformal_comparison_analysis": True,
+    # "run_quantile_count_comparison": False,
+    # "run_search_tuning_effect_comparison": False,
 }
 
 
@@ -106,7 +110,7 @@ def main():
                     "rank_analysis",
                     "sampler_comparison",
                 ],
-                schema=schema,
+                schema=schema,  
             )
             logger.info(f"Completed task: {name}")
         except Exception as e:
@@ -116,14 +120,16 @@ def main():
     if run_sections.get("run_external_tuning_analysis", False) or run_sections.get("run_categorical_external_tuning_analysis", False):
         if run_sections.get("run_categorical_external_tuning_analysis", False):
             benchmarks = ["jahs201"]
+            parallelize = False
         elif run_sections.get("run_external_tuning_analysis", False):
             benchmarks = ["LCBench-L"]
+            parallelize = True
 
         name = "external_tuning"
         logger.info("Starting external tuning analysis")
         try:
             run_and_analyze_main_benchmark(
-                parallelize=True,
+                parallelize=parallelize,
                 benchmarks=benchmarks,
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
@@ -147,26 +153,26 @@ def main():
         except Exception as e:
             logger.error(f"Error in task {name}: {e}", exc_info=True)
 
-    # Heteroscedastic external tuning
-    if run_sections.get("run_heteroscedastic_external_tuning_analysis", False):
-        name = "heteroscedastic_external_tuning"
-        logger.info("Starting heteroscedastic external tuning analysis")
+    # Non-local external tuning
+    if run_sections.get("run_non_local_external_tuning_analysis", False):
+        benchmarks = ["LCBench-L"]
+        parallelize = True
+
+        name = "non_local_external_tuning"
+        logger.info("Starting non-local external tuning analysis")
         try:
             run_and_analyze_main_benchmark(
-                parallelize=True,
-                benchmarks=[
-                    "LCBench-H",
-                    "rbv2_aknn-H"
-                 ],
-                tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
-                + EXTERNAL_TUNING_CONFIGURATIONS,
+                parallelize=parallelize,
+                benchmarks=benchmarks,
+                tuning_configurations=LIMITED_NON_LOCAL_ARCHITECTURE_VARIATION_CONFIGURATIONS
+                + NON_LOCAL_EXTERNAL_TUNING_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
                 n_trials=experiment_params.n_trials,
                 timeout=experiment_params.timeout,
                 base_random_state=BASE_RANDOM_STATE,
                 cache_path=CACHE_PATH,
                 run_start_str=run_start_str,
-                analysis_type="04_heteroskedastic_external_tuning",
+                analysis_type="04_non_local_external_tuning",
                 max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
                 n_repetitions=experiment_params.medium_n_repetitions_per_tuner_config,
                 analysis_components=[
@@ -180,17 +186,17 @@ def main():
         except Exception as e:
             logger.error(f"Error in task {name}: {e}", exc_info=True)
 
-    # Skew external tuning
-    if run_sections.get("run_skew_external_tuning_analysis", False):
-        name = "skew_external_tuning"
-        logger.info("Starting skew external tuning analysis")
+    # Skew and heteroscedastic external tuning
+    if run_sections.get("run_skew_and_heteroscedastic_external_tuning_analysis", False):
+        name = "skew_and_heteroscedastic_external_tuning"
+        logger.info("Starting skew and heteroskedastic external tuning analysis")
         try:
             run_and_analyze_main_benchmark(
                 parallelize=True,
                 benchmarks=[
-                    "LCBench-A", 
-                    "rbv2_aknn-A"
-                ],
+                    "LCBench-H",
+                    "LCBench-A"
+                 ],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
@@ -199,7 +205,7 @@ def main():
                 base_random_state=BASE_RANDOM_STATE,
                 cache_path=CACHE_PATH,
                 run_start_str=run_start_str,
-                analysis_type="04_skew_external_tuning",
+                analysis_type="04_skew_and_heteroskedastic_external_tuning",
                 max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
                 n_repetitions=experiment_params.medium_n_repetitions_per_tuner_config,
                 analysis_components=[
@@ -212,6 +218,7 @@ def main():
             logger.info(f"Completed task: {name}")
         except Exception as e:
             logger.error(f"Error in task {name}: {e}", exc_info=True)
+
 
     # Preconformal comparison
     if run_sections.get("run_preconformal_comparison_analysis", False):
@@ -282,6 +289,36 @@ def main():
                 max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
                 n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
                 analysis_components=["search_tuning_effect_comparison"],
+                schema=schema,
+            )
+            logger.info(f"Completed task: {name}")
+        except Exception as e:
+            logger.error(f"Error in task {name}: {e}", exc_info=True)
+
+
+    # Lower-bound ablations
+    if run_sections.get("run_lowerbound_ablations", False):
+        name = "lowerbound_ablations"
+        logger.info("Starting lower-bound sampler ablation analysis")
+        try:
+            run_and_analyze_main_benchmark(
+                parallelize=True,
+                benchmarks=["rbv2_aknn-L"],
+                tuning_configurations=LOWERBOUND_ABLATION_CONFIGURATIONS,
+                n_warm_starts=experiment_params.n_warm_starts,
+                n_trials=experiment_params.n_trials,
+                timeout=experiment_params.timeout,
+                base_random_state=BASE_RANDOM_STATE,
+                cache_path=CACHE_PATH,
+                run_start_str=run_start_str,
+                analysis_type="08_lowerbound_ablations",
+                max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
+                n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
+                analysis_components=[
+                    "architecture_comparison",
+                    "rank_analysis",
+                    "sampler_comparison",
+                ],
                 schema=schema,
             )
             logger.info(f"Completed task: {name}")
