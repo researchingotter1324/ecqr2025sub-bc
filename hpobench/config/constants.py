@@ -54,6 +54,8 @@ class Aliases(BaseModel):
         "ql": "QL",
         "qrf": "QRF",
         "qgbm": "QGBM",
-        "qens5": "QE",
+        "qens1": "QE1",
+        "qens3": "QE3",
+        "qens5": "QE5",
     }
     benchmark_aliases: Dict[str, str] = {"jahs201": "JAHS-201", "nas301": "NAS-301"}

@@ -35,11 +35,11 @@ run_sections = {
     # "run_lowerbound_ablations": True,
     # "run_coverage_analysis": True,
     # "run_architecture_variation_analysis": True,
-    # "run_categorical_external_tuning_analysis": True,
     # "run_skew_and_heteroscedastic_external_tuning_analysis": True,
     "run_external_tuning_analysis": True,
-    # "run_non_local_external_tuning_analysis": True,
     # "run_preconformal_comparison_analysis": True,
+    # "run_categorical_external_tuning_analysis": True,
+    # "run_non_local_external_tuning_analysis": True,
     # "run_quantile_count_comparison": True,
     # "run_search_tuning_effect_comparison": False,
 }
@@ -117,15 +117,11 @@ def main():
             logger.error(f"Error in task {name}: {e}", exc_info=True)
 
     # External tuning
-    if run_sections.get("run_external_tuning_analysis", False) or run_sections.get("run_categorical_external_tuning_analysis", False):
-        if run_sections.get("run_categorical_external_tuning_analysis", False):
-            benchmarks = ["jahs201"]
-            parallelize = False
-        elif run_sections.get("run_external_tuning_analysis", False):
-            benchmarks = ["LCBench-L"]
-            parallelize = True
-
+    if run_sections.get("run_external_tuning_analysis", False):
+        benchmarks = ["LCBench-L"]
+        parallelize = True
         name = "external_tuning"
+
         logger.info("Starting external tuning analysis")
         try:
             run_and_analyze_main_benchmark(
@@ -152,6 +148,40 @@ def main():
             logger.info(f"Completed task: {name}")
         except Exception as e:
             logger.error(f"Error in task {name}: {e}", exc_info=True)
+
+    # Categorical external tuning
+    if run_sections.get("run_categorical_external_tuning_analysis", False):
+        benchmarks = ["jahs201"]
+        parallelize = True
+        name = "categorical_external_tuning"
+
+        logger.info("Starting categorical external tuning analysis")
+        try:
+            run_and_analyze_main_benchmark(
+                parallelize=parallelize,
+                benchmarks=benchmarks,
+                tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
+                + EXTERNAL_TUNING_CONFIGURATIONS,
+                n_warm_starts=experiment_params.n_warm_starts,
+                n_trials=experiment_params.n_trials,
+                timeout=experiment_params.timeout,
+                base_random_state=BASE_RANDOM_STATE,
+                cache_path=CACHE_PATH,
+                run_start_str=run_start_str,
+                analysis_type="04_external_tuning",
+                max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
+                n_repetitions=experiment_params.medium_n_repetitions_per_tuner_config,
+                analysis_components=[
+                    "permutation_test",
+                    "rank_analysis",
+                    "dataset_performances",
+                ],
+                schema=schema,
+            )
+            logger.info(f"Completed task: {name}")
+        except Exception as e:
+            logger.error(f"Error in task {name}: {e}", exc_info=True)
+    
 
     # Non-local external tuning
     if run_sections.get("run_non_local_external_tuning_analysis", False):
