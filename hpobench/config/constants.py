@@ -30,7 +30,7 @@ class ExperimentParameters(BaseModel):
     static_data_sizes: List[int] = [25, 50, 100, 200, 400]
     static_tuning_iterations: List[int] = [0]
 
-    medium_n_repetitions_per_tuner_config: int = 5
+    medium_n_repetitions_per_tuner_config: int = 20
     large_n_repetitions_per_tuner_config: int = medium_n_repetitions_per_tuner_config 
 
 
@@ -57,5 +57,6 @@ class Aliases(BaseModel):
         "qens1": "QE1",
         "qens3": "QE3",
         "qens5": "QE5",
+        "qleaf": "QLEAF",
     }
     benchmark_aliases: Dict[str, str] = {"jahs201": "JAHS-201", "nas301": "NAS-301"}

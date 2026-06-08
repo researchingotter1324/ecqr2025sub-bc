@@ -32,11 +32,14 @@ from hpobench.prepare import (
     setup_nas301_configs,
 )
 from hpobench.config.schema import BenchmarkDataSchema
-from hpobench.config.constants import Aliases
+from hpobench.config.constants import Aliases, ExperimentParameters
 from hpobench.config.utils import _fmt_float
 
 from hpobench.tune import tune
-from hpobench.report.analyze import analyze_main_benchmark
+from hpobench.report.analyze import (
+    analyze_main_benchmark,
+    analyze_joint_architecture_and_static,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +255,7 @@ def _process_single_experiment_config(
             if tuner.tuner.backend == "ccqr_optimization":
                 sampler = tuner.tuner.searcher.sampler
                 sampler_name = sampler.__class__.__name__
+                has_local_search_attr = hasattr(sampler, "local_search")
                 use_local_search_ccqr = getattr(sampler, "local_search", None) is not None
 
                 if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
@@ -270,7 +274,9 @@ def _process_single_experiment_config(
                 else:
                     n_pre_conformal_trials = ""
 
-                if hasattr(sampler, "n_quantiles"):
+                if hasattr(sampler, "max_quantiles"):
+                    sampler_n_quantiles = sampler.max_quantiles
+                elif hasattr(sampler, "n_quantiles"):
                     sampler_n_quantiles = sampler.n_quantiles
                 else:
                     sampler_n_quantiles = ""
@@ -327,10 +333,9 @@ def _process_single_experiment_config(
                         parts.append("".join(p[0] for p in decay_parts))
                     if parts:
                         aliased_sampler_name = f"{aliased_sampler_name}-{'_'.join(parts)}"
-            if tuner.tuner.backend == "ccqr_optimization" and use_local_search_ccqr:
-                local_search_obj = getattr(tuner.tuner.searcher.sampler, "local_search", None)
-                ls_tag = type(local_search_obj).__name__ if local_search_obj is not None else "LS"
-                aliased_sampler_name = f"{ls_tag}-{aliased_sampler_name}"
+            if tuner.tuner.backend == "ccqr_optimization":
+                if has_local_search_attr and not use_local_search_ccqr:
+                    aliased_estimator_architecture = f"NL-{aliased_estimator_architecture}"
             historical_performance[
                 "estimator_architecture"
             ] = aliased_estimator_architecture
@@ -559,6 +564,78 @@ def run_and_analyze_main_benchmark(
     )
 
     return raw_benchmark_data
+
+
+def run_and_analyze_joint_benchmark(
+    benchmarks: list[
+        Literal[
+            "jahs201",
+            "lcbench",
+            "rbv2_aknn",
+            "LCBench-L",
+            "LCBench-H",
+            "LCBench-A",
+            "rbv2_aknn-L",
+            "rbv2_aknn-H",
+            "rbv2_aknn-A",
+        ]
+    ],
+    tuning_configurations: list[TunerConfig],
+    n_warm_starts: int,
+    n_trials: int,
+    timeout: Optional[float],
+    base_random_state: int,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
+    schema: BenchmarkDataSchema,
+    experiment_params: ExperimentParameters,
+    static_architectures: list[str],
+    max_n_instances_per_benchmark: int = 10,
+    n_repetitions: int = 10,
+    datasets_per_benchmark: Optional[list[list[str]]] = None,
+    parallelize: bool = False,
+) -> None:
+    """Execute main architecture variation and static benchmark, then plot jointly."""
+    experiment_configs = load_experiment_configs(
+        benchmarks=benchmarks,
+        tuning_configurations=tuning_configurations,
+        n_warm_starts=n_warm_starts,
+        n_trials=n_trials,
+        timeout=timeout,
+        max_n_instances_per_benchmark=max_n_instances_per_benchmark,
+        datasets_per_benchmark=datasets_per_benchmark,
+    )
+
+    raw_main_data = run_main_benchmark(
+        experiment_configs=experiment_configs,
+        n_repetitions=n_repetitions,
+        base_random_state=base_random_state,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        parallelize=parallelize,
+    )
+
+    static_results = run_static_benchmark(
+        benchmarks=benchmarks,
+        data_size_range=experiment_params.static_data_sizes,
+        estimator_architectures=static_architectures,
+        n_repetitions_per_estimator=experiment_params.large_n_repetitions_per_tuner_config,
+        tuning_iterations_range=experiment_params.static_tuning_iterations,
+        alpha=0.4,
+        n_pre_conformal_trials=min(experiment_params.static_tuning_iterations) - 1 if min(experiment_params.static_tuning_iterations) > 0 else 0,
+        max_n_instances=experiment_params.default_max_n_instances,
+        base_random_state=base_random_state,
+    )
+
+    analyze_joint_architecture_and_static(
+        main_raw_data=raw_main_data,
+        static_raw_data=static_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        analysis_type=analysis_type,
+        schema=schema,
+    )
 
 
 def run_static_benchmark(

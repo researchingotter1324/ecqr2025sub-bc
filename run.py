@@ -1,14 +1,13 @@
 from hpobench.config.tuner_configurations import (
     PRECONFORMAL_COMPARISON_CONFIGURATIONS,
     EXTERNAL_TUNING_CONFIGURATIONS,
-    NON_LOCAL_EXTERNAL_TUNING_CONFIGURATIONS,
     LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS,
-    LIMITED_NON_LOCAL_ARCHITECTURE_VARIATION_CONFIGURATIONS,
     ARCHITECTURE_VARIATION_CONFIGURATIONS,
     COVERAGE_ANALYSIS_CONFIGURATIONS,
     QUANTILE_COUNT_VARIATION_CONFIGURATIONS,
     SEARCH_TUNING_EFFECT_CONFIGURATIONS,
     LOWERBOUND_ABLATION_CONFIGURATIONS,
+    STATIC_ARCHITECTURES,
 )
 from hpobench.config.constants import ExperimentParameters
 from hpobench.report.analyze import (
@@ -19,6 +18,7 @@ from hpobench.config.schema import BenchmarkDataSchema
 from hpobench.report.orchestrate import (
     run_and_analyze_main_benchmark,
     run_static_benchmark,
+    run_and_analyze_joint_benchmark,
 )
 from hpobench.utils import setup_environment
 import numpy as np
@@ -34,14 +34,14 @@ experiment_params = ExperimentParameters()
 run_sections = {
     # "run_lowerbound_ablations": True,
     # "run_coverage_analysis": True,
-    # "run_architecture_variation_analysis": True,
-    # "run_skew_and_heteroscedastic_external_tuning_analysis": True,
+    # "run_architecture_variation_analysis": False,
+    "run_skew_and_heteroscedastic_external_tuning_analysis": True,
     "run_external_tuning_analysis": True,
-    # "run_preconformal_comparison_analysis": True,
-    # "run_categorical_external_tuning_analysis": True,
-    # "run_non_local_external_tuning_analysis": True,
-    # "run_quantile_count_comparison": True,
+    "run_preconformal_comparison_analysis": True,
+    "run_categorical_external_tuning_analysis": True,
+    "run_quantile_count_comparison": True,
     # "run_search_tuning_effect_comparison": False,
+    "run_joint_run_analysis": True,
 }
 
 
@@ -68,7 +68,7 @@ def main():
         try:
             run_and_analyze_main_benchmark(
                 parallelize=True,
-                benchmarks=["LCBench-L"],
+                benchmarks=["LCBench-L" ],
                 tuning_configurations=COVERAGE_ANALYSIS_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_coverage_warm_starts,
                 n_trials=experiment_params.n_trials,
@@ -118,7 +118,7 @@ def main():
 
     # External tuning
     if run_sections.get("run_external_tuning_analysis", False):
-        benchmarks = ["LCBench-L"]
+        benchmarks = ["LCBench-L", "rbv2_aknn-L"]
         parallelize = True
         name = "external_tuning"
 
@@ -183,38 +183,7 @@ def main():
             logger.error(f"Error in task {name}: {e}", exc_info=True)
     
 
-    # Non-local external tuning
-    if run_sections.get("run_non_local_external_tuning_analysis", False):
-        benchmarks = ["LCBench-L"]
-        parallelize = True
-
-        name = "non_local_external_tuning"
-        logger.info("Starting non-local external tuning analysis")
-        try:
-            run_and_analyze_main_benchmark(
-                parallelize=parallelize,
-                benchmarks=benchmarks,
-                tuning_configurations=LIMITED_NON_LOCAL_ARCHITECTURE_VARIATION_CONFIGURATIONS
-                + NON_LOCAL_EXTERNAL_TUNING_CONFIGURATIONS,
-                n_warm_starts=experiment_params.n_warm_starts,
-                n_trials=experiment_params.n_trials,
-                timeout=experiment_params.timeout,
-                base_random_state=BASE_RANDOM_STATE,
-                cache_path=CACHE_PATH,
-                run_start_str=run_start_str,
-                analysis_type="04_non_local_external_tuning",
-                max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
-                n_repetitions=experiment_params.medium_n_repetitions_per_tuner_config,
-                analysis_components=[
-                    "permutation_test",
-                    "rank_analysis",
-                    "dataset_performances",
-                ],
-                schema=schema,
-            )
-            logger.info(f"Completed task: {name}")
-        except Exception as e:
-            logger.error(f"Error in task {name}: {e}", exc_info=True)
+    # Non-local external tuning section removed per request.
 
     # Skew and heteroscedastic external tuning
     if run_sections.get("run_skew_and_heteroscedastic_external_tuning_analysis", False):
@@ -320,6 +289,32 @@ def main():
                 n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
                 analysis_components=["search_tuning_effect_comparison"],
                 schema=schema,
+            )
+            logger.info(f"Completed task: {name}")
+        except Exception as e:
+            logger.error(f"Error in task {name}: {e}", exc_info=True)
+
+
+    if run_sections["run_joint_run_analysis"]:
+        name = "joint_run_analysis"
+        logger.info("Starting joint run analysis")
+        try:
+            run_and_analyze_joint_benchmark(
+                parallelize=True,
+                benchmarks=["LCBench-L"],
+                tuning_configurations=ARCHITECTURE_VARIATION_CONFIGURATIONS,
+                n_warm_starts=experiment_params.n_warm_starts,
+                n_trials=experiment_params.n_trials,
+                timeout=experiment_params.timeout,
+                base_random_state=BASE_RANDOM_STATE,
+                cache_path=CACHE_PATH,
+                run_start_str=run_start_str,
+                analysis_type="09_joint_run_analysis",
+                max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
+                n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
+                schema=schema,
+                experiment_params=experiment_params,
+                static_architectures=STATIC_ARCHITECTURES,
             )
             logger.info(f"Completed task: {name}")
         except Exception as e:

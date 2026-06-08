@@ -18,7 +18,6 @@ except ImportError:
     )
 from hpobench.config.utils import (
     get_external_tuning_configurations,
-    get_non_local_external_tuning_configurations,
     build_architecture_variation_configurations,
 )
 from hpobench.config.config_types import (
@@ -109,22 +108,19 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
 
 # 4. Architecture variation configurations:
 ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
-ARCHITECTURE_VARIATION_N_QUANTILES = 10
+ARCHITECTURE_VARIATION_N_QUANTILES = 6
 ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
-        "ql",
-        # "qknn",
-        "qleaf",
-        "qgbm",
-        "qens3",
+            "qgbm",
+            "qleaf",
+            "qknn",
+            "ql",
+            "qens3",
+            # "qens5",
+            "qens1",
     ],
     samplers=[
-        ExpectedImprovementSampler(
-            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
-            num_ei_samples=1000,
-            adapter=ARCHITECTURE_VARIATION_ADAPTER,
-            local_search=SmacLocalSearch(),
-        ),
+        
         ThompsonSampler(
             n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
             enable_optimistic_sampling=False,
@@ -166,7 +162,7 @@ LOWERBOUND_ABLATION_CONFIGURATIONS = build_architecture_variation_configurations
 
 # 5. Limited architecture configurations:
 LIMITED_ARCHITECTURE_ADAPTER = "DtACI"
-LIMITED_ARCHITECTURE_N_QUANTILES = 10
+LIMITED_ARCHITECTURE_N_QUANTILES = 6
 LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
@@ -174,26 +170,40 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
             # "qleaf",
             # "qknn",
             "ql",
-            # "qens3",
+            "qens3",
+            # "qens5",
+            # "qens1",
             # "qrf",
         ],
         samplers=[
         ThompsonSampler(
-            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
+            n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
             enable_optimistic_sampling=False,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
         ),
-            ExpectedImprovementSampler(
-                n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-                num_ei_samples=1000,
-                adapter=LIMITED_ARCHITECTURE_ADAPTER,
-                local_search=SmacLocalSearch(
-        # n_acq_starts=30,
-        # n_historical_starts=18,
-        # n_steps_plateau_walk=30,
-        # num_continuous_neighbors=24
-    ),
-            ),
+        # PessimisticLowerBoundSampler(interval_width=0.8, adapter=LIMITED_ARCHITECTURE_ADAPTER, local_search=SmacLocalSearch()),
+    #         ExpectedImprovementSampler(
+    #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+    #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
+    #             ei_mode="soft_quantile_point",
+    #             local_search=SmacLocalSearch(
+    #     # n_acq_starts=30,
+    #     # n_historical_starts=18,
+    #     # n_steps_plateau_walk=30,
+    #     # num_continuous_neighbors=24
+    # ),
+    #         ),
+    #                     ExpectedImprovementSampler(
+    #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+    #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
+    #             ei_mode="quantile_point",
+    #             local_search=SmacLocalSearch(
+    #     # n_acq_starts=30,
+    #     # n_historical_starts=18,
+    #     # n_steps_plateau_walk=30,
+    #     # num_continuous_neighbors=24
+    # ),
+    #         ),
         ],
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,
@@ -201,38 +211,7 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     )
 )
 
-# 5b. Limited non-local architecture configurations:
-LIMITED_NON_LOCAL_ARCHITECTURE_ADAPTER = "DtACI"
-LIMITED_NON_LOCAL_ARCHITECTURE_N_QUANTILES = 10
-LIMITED_NON_LOCAL_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
-    build_architecture_variation_configurations(
-        architectures=[
-            # "qgbm",
-            # "qleaf",
-            # "qknn",
-            "ql",
-            "qens3",
-            # "qrf",
-        ],
-        samplers=[
 
-            ExpectedImprovementSampler(
-                n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-                num_ei_samples=1000,
-                adapter=LIMITED_ARCHITECTURE_ADAPTER,
-                local_search=SmacLocalSearch(
-        # n_acq_starts=30,
-        # n_historical_starts=18,
-        # n_steps_plateau_walk=30,
-        # num_continuous_neighbors=24
-    ),
-            ),
-        ],
-        n_pre_conformal_trials=32,
-        searcher_tuning_framework=None,
-        calibration_split_strategy="train_test_split",
-    )
-)
 
 # 6. Pre-conformal comparison configurations:
 PRECONFORMAL_ADAPTER = "DtACI"
@@ -255,7 +234,6 @@ for architecture in [
                 samplers=[
         ExpectedImprovementSampler(
             n_quantiles=PRECONFORMAL_N_QUANTILES,
-            num_ei_samples=1000,
             adapter=PRECONFORMAL_ADAPTER,
             local_search=SmacLocalSearch(),
         ),
@@ -274,26 +252,26 @@ for architecture in [
 # 7. Quantile count variation configurations:
 QUANTILE_COUNT_VARIATION_ADAPTER = "DtACI"
 QUANTILE_COUNT_VARIATION_CONFIGURATIONS = []
-QUANTILE_COUNT_VALUES = [4, 6, 10]
+QUANTILE_COUNT_VALUES = [4, 10, 20]
 
 for n_quantiles in QUANTILE_COUNT_VALUES:
     QUANTILE_COUNT_VARIATION_CONFIGURATIONS.extend(
         build_architecture_variation_configurations(
             architectures=[
-                "qens3",  # NOTE: Use single architecture for this configuration, analysis doesn't support multiple
+                "qgbm",
+                "qleaf",
+                "qknn",
+                "ql",
+                "qens3",
+                "qens1",
             ],
             samplers=[
-                ExpectedImprovementSampler(
-                    n_quantiles=n_quantiles,
-                    num_ei_samples=1000,
-                    adapter=QUANTILE_COUNT_VARIATION_ADAPTER,
-                    local_search=SmacLocalSearch(),
-                ),
                 ThompsonSampler(
                     n_quantiles=n_quantiles,
                     enable_optimistic_sampling=False,
                     adapter=QUANTILE_COUNT_VARIATION_ADAPTER,
                 ),
+
             ],
             n_pre_conformal_trials=32,
             searcher_tuning_framework=None,
@@ -317,7 +295,7 @@ for searcher_tuning_framework in [None, "fixed"]:
             samplers=[
                 ThompsonSampler(
                     n_quantiles=SEARCH_TUNING_EFFECT_N_QUANTILES,
-                    enable_optimistic_sampling=True,
+                    enable_optimistic_sampling=False,
                     adapter=SEARCH_TUNING_EFFECT_ADAPTER,
                 )
             ],
@@ -328,4 +306,5 @@ for searcher_tuning_framework in [None, "fixed"]:
     )
 
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
-NON_LOCAL_EXTERNAL_TUNING_CONFIGURATIONS = get_non_local_external_tuning_configurations()
+
+STATIC_ARCHITECTURES = ["qgbm", "qleaf", "qknn", "ql", "qens3", "qens1"]

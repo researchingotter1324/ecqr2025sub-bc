@@ -47,7 +47,7 @@ except ImportError:
         "smac is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
     )
 
-N_CANDIDATES = 2000
+N_CANDIDATES = 5000
 
 
 def create_runtime_tracker() -> list[datetime]:
@@ -343,9 +343,9 @@ def optuna_tune(
         initialized_sampler = RandomSampler(seed=random_state)
     elif searcher == "CMA-ES":
         initialized_sampler = CmaEsSampler(seed=random_state, n_startup_trials=0)
-    elif searcher == "LGP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True, n_preliminary_samples=N_CANDIDATES)
     elif searcher == "GP":
+        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True, n_preliminary_samples=N_CANDIDATES)
+    elif searcher == "NL-GP":
         initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=False, n_preliminary_samples=N_CANDIDATES)
     else:
         raise ValueError(f"Unknown optuna sampler: {searcher}")
@@ -665,7 +665,7 @@ def smac_tune(
     )
 
     searcher = tuner_model.searcher
-    if searcher not in ["SMAC-EI", "LSMAC-EI"]:
+    if searcher not in ["SMAC-EI", "NL-SMAC-EI"]:
         raise ValueError(f"Unknown SMAC sampler: {searcher}")
 
     # Setup runtime tracking
@@ -676,7 +676,7 @@ def smac_tune(
         runtimes=runtimes,
     )
 
-    if searcher == "LSMAC-EI":
+    if searcher == "SMAC-EI":
         acquisition_maximizer = HyperparameterOptimizationFacade.get_acquisition_maximizer(
             scenario, challengers=n_candidates
         )

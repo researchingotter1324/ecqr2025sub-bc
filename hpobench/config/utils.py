@@ -75,10 +75,8 @@ def create_searcher_config_id(
     sampler_class_name = sampler.__class__.__name__
     sampler_acronym = "".join(c for c in sampler_class_name if c.isupper())
 
+    has_local_search_attr = hasattr(sampler, "local_search")
     local_search_obj = getattr(sampler, "local_search", None)
-    if local_search_obj is not None:
-        ls_tag = type(local_search_obj).__name__
-        sampler_acronym = f"{ls_tag}-{sampler_acronym}"
 
     adapter_name = None
     if hasattr(sampler, "adapters") and sampler.adapters:
@@ -91,11 +89,15 @@ def create_searcher_config_id(
 
     if quantile_arch:
         quantile_arch_upper = quantile_arch.upper()
+        if has_local_search_attr and local_search_obj is None:
+            quantile_arch_upper = f"NL-{quantile_arch_upper}"
         if adapter_name:
             config_id += f"{quantile_arch_upper}-{adapter_name} {sampler_acronym}"
         else:
             config_id += f"{quantile_arch_upper} {sampler_acronym}"
     else:
+        if has_local_search_attr and local_search_obj is None:
+            sampler_acronym = f"NL-{sampler_acronym}"
         config_id += f"{sampler_acronym}"
 
     if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
@@ -115,7 +117,9 @@ def create_searcher_config_id(
     ):
         config_id += " OPT"
 
-    if hasattr(sampler, "n_quantiles"):
+    if hasattr(sampler, "max_quantiles"):
+        config_id += f" nq={sampler.max_quantiles}"
+    elif hasattr(sampler, "n_quantiles"):
         config_id += f" nq={sampler.n_quantiles}"
 
     if hasattr(sampler, "num_ei_samples"):
@@ -249,35 +253,13 @@ def get_external_tuning_configurations() -> List[TunerConfig]:
         List of external tuning configuration objects (e.g., for optuna, smac).
     """
     return [
-               TunerConfig(
-            tuner=OptunaModel(backend="optuna", searcher="LGP"),
-            tuner_identifier="LGP-EI",
-        ),
-        # TunerConfig(
-        #     tuner=OptunaModel(backend="optuna", searcher="TPE"),
-        #     tuner_identifier="TPE",
-        # ),
-        # TunerConfig(
-        #     tuner=OptunaModel(backend="optuna", searcher="random"),
-        #     tuner_identifier="RS",
-        # ),
-        # TunerConfig(
-        #     tuner=SMACModel(backend="smac", searcher="LSMAC-EI"),
-        #     tuner_identifier="LSMAC",
-        # ),
-    ]
-
-
-def get_non_local_external_tuning_configurations() -> List[TunerConfig]:
-    """Get non-local external (non-ccqr_optimization) tuning configurations for baseline comparison.
-
-    Returns:
-        List of external tuning configuration objects (e.g., for optuna, smac).
-    """
-    return [
         TunerConfig(
             tuner=OptunaModel(backend="optuna", searcher="GP"),
             tuner_identifier="GP-EI",
+        ),
+        TunerConfig(
+            tuner=OptunaModel(backend="optuna", searcher="NL-GP"),
+            tuner_identifier="NL-GP-EI",
         ),
         TunerConfig(
             tuner=OptunaModel(backend="optuna", searcher="TPE"),
@@ -291,5 +273,8 @@ def get_non_local_external_tuning_configurations() -> List[TunerConfig]:
             tuner=SMACModel(backend="smac", searcher="SMAC-EI"),
             tuner_identifier="SMAC",
         ),
-
+        TunerConfig(
+            tuner=SMACModel(backend="smac", searcher="NL-SMAC-EI"),
+            tuner_identifier="NL-SMAC",
+        ),
     ]

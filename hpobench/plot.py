@@ -1,5 +1,6 @@
 import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 from datetime import datetime
 import pandas as pd
 from typing import Optional, Dict, Literal
@@ -10,6 +11,7 @@ import numpy as np
 import math
 import re
 from hpobench.utils import AnalysisPathManager
+from hpobench.config.schema import BenchmarkDataSchema
 import seaborn as sns
 from matplotlib.colors import ListedColormap
 
@@ -166,6 +168,13 @@ def _get_y_bounds(
     return y_min, y_max
 
 
+def _is_non_local(legend_label: str) -> bool:
+    """Determine if a variant is non-local based on its label."""
+    label = str(legend_label)
+    if "NL-" in label:
+        return True
+    return False
+
 def _plot_tuner(
     ax,
     tuner_data,
@@ -180,6 +189,8 @@ def _plot_tuner(
     add_markers=True,
 ):
     marker_style = marker if add_markers else "None"
+    linestyle = "--" if _is_non_local(legend_label) else "-"
+    
     ax.plot(
         tuner_data[x_col],
         tuner_data[y_col],
@@ -188,6 +199,7 @@ def _plot_tuner(
         color=color,
         marker=marker_style,
         markersize=4,
+        linestyle=linestyle,
     )
     if add_ci and y_col_lower and y_col_upper:
         ax.fill_between(
@@ -818,7 +830,6 @@ def plot_paired_rank_and_cd(
         square_size = base_width  # Use base width for square dimensions
         fig_width = square_size * 2.2  # Two squares plus some spacing
         fig_height = square_size * len(row_values) + 1.0  # Account for legend space
-        from matplotlib.gridspec import GridSpec
 
         fig = plt.figure(figsize=(fig_width, fig_height))
         gs = GridSpec(
@@ -834,7 +845,6 @@ def plot_paired_rank_and_cd(
         # Original CD layout
         fig_width = base_width * 2
         fig_height = base_height * len(row_values)
-        from matplotlib.gridspec import GridSpec
 
         fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
         gs = GridSpec(nrows=len(row_values) * 2, ncols=2, figure=fig)
@@ -871,6 +881,7 @@ def plot_paired_rank_and_cd(
             row_data.groupby(entity_col)
         ):
             color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
+            linestyle = "--" if _is_non_local(entity) else "-"
             line = ax_rank.plot(
                 entity_data[x_col],
                 entity_data["rank"],
@@ -879,6 +890,7 @@ def plot_paired_rank_and_cd(
                 color=color,
                 marker=None,
                 markersize=4,
+                linestyle=linestyle,
             )[0]
 
             # Collect legend information from first row only
@@ -1053,3 +1065,120 @@ def plot_paired_rank_and_cd(
     logger.debug(
         f"Paired plots saved in {output_path} with prefix {filename_prefix}_paired"
     )
+
+def plot_joint_architecture_and_static(
+    main_processed_df: pd.DataFrame,
+    static_processed_df: pd.DataFrame,
+    cache_path: str,
+    run_start_str: str,
+    filename_prefix: str,
+    analysis_type: str,
+    subfolder: str,
+    schema: BenchmarkDataSchema,
+) -> None:
+    """Plot joint analysis comparing architecture optimization ranks and estimator errors."""
+    path_manager = AnalysisPathManager(cache_path, run_start_str)
+    output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
+    plot_path = os.path.join(output_path, filename_prefix)
+
+    row_measure = schema.bench_col
+    row_values = main_processed_df[row_measure].unique()
+
+    base_width = 4.0
+    base_height = 4.5
+    fig_width = base_width * 2
+    fig_height = base_height * len(row_values)
+
+    fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
+    gs = GridSpec(nrows=len(row_values), ncols=2, figure=fig)
+
+    legend_handles = []
+    legend_labels = []
+
+    for i, row_value in enumerate(row_values):
+        ax_main = fig.add_subplot(gs[i, 0])
+        ax_static = fig.add_subplot(gs[i, 1])
+
+        main_row_data = main_processed_df[main_processed_df[row_measure] == row_value]
+        
+        for entity_idx, (entity, entity_data) in enumerate(main_row_data.groupby(schema.estimator_architecture_col)):
+            color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
+            line = ax_main.plot(
+                entity_data[schema.norm_iter_unit],
+                entity_data["rank"],
+                label=entity,
+                alpha=0.8,
+                color=color,
+                marker=None,
+                markersize=4,
+            )[0]
+            if i == 0:
+                legend_handles.append(line)
+                legend_labels.append(entity)
+            if "rank_lower" in entity_data.columns and "rank_upper" in entity_data.columns:
+                ax_main.fill_between(
+                    entity_data[schema.norm_iter_unit],
+                    entity_data["rank_lower"],
+                    entity_data["rank_upper"],
+                    alpha=0.2,
+                    color=color,
+                )
+        
+        ax_main.set_xlabel("Normalized Iteration Budget", fontsize=13)
+        ax_main.set_ylabel("Rank", fontsize=13, labelpad=10)
+        ax_main.set_title(f"Optimization Performance: {row_value}", fontsize=13, pad=20)
+        ax_main.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+        for spine in ["top", "right", "bottom", "left"]:
+            ax_main.spines[spine].set_linewidth(1.2)
+        ax_main.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
+        ax_main.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+
+        static_row_data = static_processed_df[static_processed_df[row_measure] == row_value]
+        
+        for entity_idx, (entity, entity_data) in enumerate(static_row_data.groupby(schema.estimator_architecture_col)):
+            color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
+            ax_static.plot(
+                entity_data[schema.data_size_col],
+                entity_data["rank"],
+                label=entity,
+                alpha=0.8,
+                color=color,
+                marker="o",
+                markersize=4,
+            )
+        
+        ax_static.set_xlabel("Training Data Size", fontsize=13)
+        ax_static.set_ylabel("Rank (Pinball Loss)", fontsize=13, labelpad=10)
+        ax_static.set_title(f"Estimator Error: {row_value}", fontsize=13, pad=20)
+        ax_static.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+        for spine in ["top", "right", "bottom", "left"]:
+            ax_static.spines[spine].set_linewidth(1.2)
+        ax_static.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
+        ax_static.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+
+    handles, labels = _sort_legend_items(legend_handles, legend_labels)
+    num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
+    legend_anchor_y, legend_bottom_margin = _calculate_legend_position(
+        len(row_values), num_legend_rows, "standard"
+    )
+
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=min(4, len(labels)),
+            fontsize=12,
+            bbox_to_anchor=(0.5, legend_anchor_y),
+            frameon=False,
+        )
+
+    fig.subplots_adjust(wspace=0.25, hspace=0.22, bottom=legend_bottom_margin, top=0.90, left=0.09, right=0.98)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    for fmt in PLOT_FORMATS:
+        full_path = f"{plot_path}_{timestamp}.{fmt}"
+        fig.savefig(full_path, dpi=PLOT_DPI, bbox_inches="tight", format=fmt)
+
+    plt.close(fig)
+    logger.debug(f"Joint plots saved in {output_path} with prefix {filename_prefix}")

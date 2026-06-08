@@ -7,6 +7,7 @@ from hpobench.utils import save_analysis_results
 from hpobench.plot import (
     plot_and_save,
     plot_paired_rank_and_cd,
+    plot_joint_architecture_and_static,
 )
 from hpobench.process import (
     BenchmarkDataProcessor,
@@ -292,7 +293,7 @@ def analyze_main_benchmark(
             - "sampler_comparison": Performance comparison partitioned by sampler
             - "architecture_comparison": Performance comparison by estimator architecture
             - "conformalization_effect": Conformal vs non-conformal method comparison
-            - "quantile_count_comparison": Performance comparison across different quantile counts by sampler
+            - "quantile_count_comparison": Performance comparison across different quantile counts by architecture
             - "search_tuning_effect_comparison": Performance comparison of searcher tuning framework effects by architecture
 
     Side Effects:
@@ -978,17 +979,17 @@ def analyze_main_benchmark(
 
     # Quantile count comparison analysis:
     if "quantile_count_comparison" in analysis_components:
-        if len(raw_benchmark_data[estimator_architecture_col].unique()) > 1:
+        if len(raw_benchmark_data[sampler_col].unique()) > 1:
             raise ValueError(
-                "Quantile count comparison analysis requires only one architecture."
+                "Quantile count comparison analysis requires only one sampler."
             )
         for benchmark in raw_benchmark_data[bench_col].unique():
             benchmark_data = raw_benchmark_data[
                 raw_benchmark_data[bench_col] == benchmark
             ]
             # NOTE: Raw data for this component is expected to contain ccqr_optimization
-            # variants where we want to rank a same architecture, repeated for
-            # many samplers, ranked across varying levels of n_quantiles, hence
+            # variants where we want to rank a same sampler, repeated for
+            # many architectures, ranked across varying levels of n_quantiles, hence
             # 'extra_ranking_cols=[estimator_architecture_col, sampler_col]':
             for budget_unit in [runtime_unit, iter_unit]:
                 quantile_count_comparison_results = (
@@ -1012,7 +1013,7 @@ def analyze_main_benchmark(
                     x_col=f"normalized_{budget_unit}",
                     y_cols=["rank"],
                     entity_col="plotting_identifier",
-                    col_measure=sampler_col,
+                    col_measure=estimator_architecture_col,
                     row_measure=bench_col,
                     cache_path=cache_path,
                     run_start_str=run_start_str,
@@ -1261,4 +1262,75 @@ def analyze_searcher_estimator_comparison(
         row_measure_label="Surrogate Architecture",
         x_label="Training Data Size",
         x_axis_start=0,
+    )
+
+
+def analyze_joint_architecture_and_static(
+    main_raw_data: pd.DataFrame,
+    static_raw_data: pd.DataFrame,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
+    schema: BenchmarkDataSchema,
+) -> None:
+    """Process both main architecture variation and static benchmarks, then plot jointly."""
+    processor = BenchmarkDataProcessor(schema=schema)
+    
+    bench_relative_iterative_results = processor.process_performance_records(
+        raw_benchmark_data=main_raw_data,
+        budget_unit=schema.iter_unit,
+        relativize_budget=True,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=None,
+        n_bootstraps=1000,
+    )
+    
+    bench_relative_iterative_results["rank_lower"] = bench_relative_iterative_results["rank_lower"].fillna(bench_relative_iterative_results["rank"])
+
+    non_tuned_results_df = static_raw_data[
+        static_raw_data[schema.tuning_iterations_col] == 0
+    ]
+
+    filtered_static_df = rank_and_collapse_data(
+        static_raw_benchmark_data=non_tuned_results_df,
+        aggregators=[
+            schema.bench_col,
+            schema.data_col,
+            schema.data_size_col,
+            schema.rep_col,
+            schema.estimator_architecture_col,
+            schema.tuning_iterations_col,
+        ],
+        comparison_col=schema.estimator_architecture_col,
+        metric_col=schema.estimator_error_col,
+        repetition_col=schema.rep_col,
+    )
+
+    aggregated_static_df = aggregate_and_save(
+        data=filtered_static_df,
+        grouping_cols=[
+            schema.bench_col,
+            schema.data_size_col,
+            schema.estimator_architecture_col,
+            schema.tuning_iterations_col,
+        ],
+        breakout_cols=[schema.bench_col],
+        block_cols=[schema.data_col],
+        metrics=["rank"],
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="joint_static_aggregated_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    plot_joint_architecture_and_static(
+        main_processed_df=bench_relative_iterative_results,
+        static_processed_df=aggregated_static_df,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename_prefix="joint_architecture_and_static",
+        analysis_type=analysis_type,
+        subfolder="joint_analysis",
+        schema=schema,
     )

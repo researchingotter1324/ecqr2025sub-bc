@@ -82,7 +82,7 @@ class OptunaModel(TunerModelConfig):
         "random",
         "CMA-ES",
         "GP",
-        "LGP",
+        "NL-GP",
     ]
 
 
@@ -97,7 +97,7 @@ class SMACModel(TunerModelConfig):
     backend: Literal["smac"]
     searcher: Literal[
         "SMAC-EI",
-        "LSMAC-EI",
+        "NL-SMAC-EI",
     ]
 
 
