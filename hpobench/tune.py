@@ -10,6 +10,7 @@ from hpobench.config.config_types import (
     OptunaModel,
     SMACModel,
 )
+from hpobench.config.constants import DEFAULT_N_CANDIDATES
 from smac.acquisition.maximizer.random_search import RandomSearch
 
 try:
@@ -46,9 +47,6 @@ except ImportError:
     raise ImportError(
         "smac is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
     )
-
-N_CANDIDATES = 5000
-
 
 def create_runtime_tracker() -> list[datetime]:
     """Creates an empty list to track runtime timestamps during optimization.
@@ -317,6 +315,7 @@ def optuna_tune(
     random_state: Optional[int] = None,
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
+    n_candidates: int = DEFAULT_N_CANDIDATES,
 ) -> pd.DataFrame:
     """Runs hyperparameter optimization using Optuna with a synthetic objective function.
 
@@ -329,6 +328,7 @@ def optuna_tune(
         random_state: Optional random seed for reproducible results.
         n_trials: Optional maximum number of optimization trials.
         timeout: Optional time budget in seconds for the optimization process.
+        n_candidates: Number of candidate configurations for acquisition function maximization.
 
     Returns:
         DataFrame containing the complete tuning history with trial results and metadata.
@@ -337,16 +337,16 @@ def optuna_tune(
 
     if searcher == "TPE":
         initialized_sampler = TPESampler(
-            seed=random_state, n_startup_trials=0, n_ei_candidates=N_CANDIDATES
+            seed=random_state, n_startup_trials=0, n_ei_candidates=n_candidates
         )
     elif searcher == "random":
         initialized_sampler = RandomSampler(seed=random_state)
     elif searcher == "CMA-ES":
         initialized_sampler = CmaEsSampler(seed=random_state, n_startup_trials=0)
     elif searcher == "GP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True, n_preliminary_samples=N_CANDIDATES)
+        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True, n_preliminary_samples=n_candidates)
     elif searcher == "NL-GP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=False, n_preliminary_samples=N_CANDIDATES)
+        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=False, n_preliminary_samples=n_candidates)
     else:
         raise ValueError(f"Unknown optuna sampler: {searcher}")
 
@@ -469,6 +469,7 @@ def ccqr_optimization_tune(
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
     searcher_tuning_framework: Optional[str] = None,
+    n_candidates: int = DEFAULT_N_CANDIDATES,
 ) -> pd.DataFrame:
     """Runs conformal hyperparameter optimization using the ccqr_optimization framework with synthetic objectives.
 
@@ -482,6 +483,7 @@ def ccqr_optimization_tune(
         n_trials: Optional maximum number of optimization trials.
         timeout: Optional time budget in seconds for the optimization process.
         searcher_tuning_framework: Optional framework identifier for searcher training ("decaying" or "fixed").
+        n_candidates: Number of candidate configurations for acquisition function maximization.
 
     Returns:
         DataFrame containing the complete tuning history with conformal prediction intervals and metadata.
@@ -494,7 +496,7 @@ def ccqr_optimization_tune(
         objective_function=objective_fn,
         search_space=ccqr_optimization_params,
         minimize=True,
-        n_candidates=N_CANDIDATES,
+        n_candidates=n_candidates,
         warm_starts=warm_start_configs,
         dynamic_sampling=True,
     )
@@ -628,7 +630,7 @@ def smac_tune(
     random_state: Optional[int] = None,
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
-    n_candidates: int = N_CANDIDATES,
+    n_candidates: int = DEFAULT_N_CANDIDATES,
 ) -> pd.DataFrame:
     """Runs Bayesian optimization using SMAC3 with Random Forest surrogate and acquisition functions.
 
@@ -757,6 +759,7 @@ def tune(
     random_state: Optional[int] = None,
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
+    n_candidates: Optional[int] = None,
 ) -> pd.DataFrame:
     """Unified tuning interface for optuna, ccqr_optimization, and smac.
 
@@ -768,10 +771,19 @@ def tune(
         random_state: Optional random seed.
         n_trials: Optional number of trials.
         timeout: Optional time budget in seconds.
+        n_candidates: Number of candidate configurations for acquisition function maximization.
+            Falls back to the value stored in tuner_config, then to DEFAULT_N_CANDIDATES.
 
     Returns:
         DataFrame with tuning history.
     """
+    # Resolve effective n_candidates: explicit argument > tuner_config field > global default
+    effective_n_candidates = (
+        n_candidates
+        if n_candidates is not None
+        else (tuner_config.n_candidates if tuner_config.n_candidates is not None else DEFAULT_N_CANDIDATES)
+    )
+
     # Shared arguments for all tuner functions:
     shared_kwargs = {
         "tuner_model": tuner_config.tuner,
@@ -785,16 +797,18 @@ def tune(
 
     if tuner_config.tuner.backend == "optuna":
         history = optuna_tune(
+            n_candidates=effective_n_candidates,
             **shared_kwargs,
         )
     elif tuner_config.tuner.backend == "ccqr_optimization":
         history = ccqr_optimization_tune(
             searcher_tuning_framework=tuner_config.searcher_tuning_framework,
+            n_candidates=effective_n_candidates,
             **shared_kwargs,
         )
     elif tuner_config.tuner.backend == "smac":
         history = smac_tune(
-            n_candidates=N_CANDIDATES,
+            n_candidates=effective_n_candidates,
             **shared_kwargs,
         )
     else:

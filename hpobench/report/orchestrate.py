@@ -32,7 +32,7 @@ from hpobench.prepare import (
     setup_nas301_configs,
 )
 from hpobench.config.schema import BenchmarkDataSchema
-from hpobench.config.constants import Aliases, ExperimentParameters
+from hpobench.config.constants import Aliases, ExperimentParameters, DEFAULT_N_CANDIDATES
 from hpobench.config.utils import _fmt_float
 
 from hpobench.tune import tune
@@ -227,6 +227,7 @@ def _process_single_experiment_config(
                 params=experiment_config.search_space,
                 warm_start_configs=warm_start_configs_per_repetition[repetition],
                 random_state=base_random_state + repetition,
+                n_candidates=tuner.n_candidates,
             )
 
             historical_performance = add_runtime(
@@ -306,6 +307,13 @@ def _process_single_experiment_config(
                 sampler_adapter = ""
                 tuner_searcher_tuning_framework = ""
 
+            # Resolve effective n_candidates for this tuner config:
+            tuner_n_candidates = (
+                tuner.n_candidates
+                if tuner.n_candidates is not None
+                else DEFAULT_N_CANDIDATES
+            )
+
             aliased_estimator_architecture = (
                 aliases.architecture_aliases[estimator_architecture]
                 if estimator_architecture in aliases.architecture_aliases
@@ -345,6 +353,7 @@ def _process_single_experiment_config(
                 "n_pre_conformal_trials"
             ] = n_pre_conformal_trials
             historical_performance["sampler_n_quantiles"] = sampler_n_quantiles
+            historical_performance["n_candidates"] = tuner_n_candidates
             historical_performance["sampler_adapter"] = sampler_adapter
             historical_performance[
                 "tuner_searcher_tuning_framework"
@@ -461,6 +470,7 @@ def run_and_analyze_main_benchmark(
             "conformalization_effect",
             "quantile_count_comparison",
             "search_tuning_effect_comparison",
+            "num_candidates_comparison",
         ]
     ],
     max_n_instances_per_benchmark: int = 10,

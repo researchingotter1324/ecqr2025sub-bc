@@ -24,6 +24,7 @@ from hpobench.config.config_types import (
     TunerConfig,
     CCQRModel,
 )
+from hpobench.config.constants import DEFAULT_N_CANDIDATES
 
 # 2. Coverage analysis configurations:
 COVERAGE_ANALYSIS_CONFIGURATIONS = []
@@ -308,3 +309,34 @@ for searcher_tuning_framework in [None, "fixed"]:
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
 
 STATIC_ARCHITECTURES = ["qgbm", "qleaf", "qknn", "ql", "qens3", "qens1"]
+
+# 10. Number of candidates variation configurations:
+NUM_CANDIDATES_VARIATION_ADAPTER = "DtACI"
+NUM_CANDIDATES_VARIATION_N_QUANTILES = 6
+NUM_CANDIDATES_VARIATION_CONFIGURATIONS = []
+NUM_CANDIDATES_VALUES = [500, 3000, 10000]
+
+for n_candidates in NUM_CANDIDATES_VALUES:
+    NUM_CANDIDATES_VARIATION_CONFIGURATIONS.extend(
+        build_architecture_variation_configurations(
+            architectures=[
+                "qgbm",
+                "qleaf",
+                "qknn",
+                "ql",
+                "qens3",
+                "qens1",
+            ],
+            samplers=[
+                ThompsonSampler(
+                    n_quantiles=NUM_CANDIDATES_VARIATION_N_QUANTILES,
+                    enable_optimistic_sampling=False,
+                    adapter=NUM_CANDIDATES_VARIATION_ADAPTER,
+                ),
+            ],
+            n_pre_conformal_trials=32,
+            searcher_tuning_framework=None,
+            calibration_split_strategy="train_test_split",
+            n_candidates=n_candidates,
+        )
+    )

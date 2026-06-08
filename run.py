@@ -7,6 +7,7 @@ from hpobench.config.tuner_configurations import (
     QUANTILE_COUNT_VARIATION_CONFIGURATIONS,
     SEARCH_TUNING_EFFECT_CONFIGURATIONS,
     LOWERBOUND_ABLATION_CONFIGURATIONS,
+    NUM_CANDIDATES_VARIATION_CONFIGURATIONS,
     STATIC_ARCHITECTURES,
 )
 from hpobench.config.constants import ExperimentParameters
@@ -42,6 +43,7 @@ run_sections = {
     "run_quantile_count_comparison": True,
     # "run_search_tuning_effect_comparison": False,
     "run_joint_run_analysis": True,
+    # "run_num_candidates_comparison": True,
 }
 
 
@@ -294,6 +296,31 @@ def main():
         except Exception as e:
             logger.error(f"Error in task {name}: {e}", exc_info=True)
 
+
+    # Number of candidates comparison
+    if run_sections.get("run_num_candidates_comparison", False):
+        name = "num_candidates_comparison"
+        logger.info("Starting number of candidates comparison")
+        try:
+            run_and_analyze_main_benchmark(
+                parallelize=True,
+                benchmarks=["LCBench-L"],
+                tuning_configurations=NUM_CANDIDATES_VARIATION_CONFIGURATIONS,
+                n_warm_starts=experiment_params.n_warm_starts,
+                n_trials=experiment_params.n_trials,
+                timeout=experiment_params.timeout,
+                base_random_state=BASE_RANDOM_STATE,
+                cache_path=CACHE_PATH,
+                run_start_str=run_start_str,
+                analysis_type="10_num_candidates_comparison",
+                max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
+                n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
+                analysis_components=["num_candidates_comparison"],
+                schema=schema,
+            )
+            logger.info(f"Completed task: {name}")
+        except Exception as e:
+            logger.error(f"Error in task {name}: {e}", exc_info=True)
 
     if run_sections["run_joint_run_analysis"]:
         name = "joint_run_analysis"

@@ -246,6 +246,7 @@ def analyze_main_benchmark(
             "conformalization_effect",
             "quantile_count_comparison",
             "search_tuning_effect_comparison",
+            "num_candidates_comparison",
         ]
     ],
     schema: BenchmarkDataSchema,
@@ -295,6 +296,7 @@ def analyze_main_benchmark(
             - "conformalization_effect": Conformal vs non-conformal method comparison
             - "quantile_count_comparison": Performance comparison across different quantile counts by architecture
             - "search_tuning_effect_comparison": Performance comparison of searcher tuning framework effects by architecture
+            - "num_candidates_comparison": Performance comparison across different numbers of candidates by architecture
 
     Side Effects:
         - Generates and saves statistical test results as CSV files
@@ -321,6 +323,7 @@ def analyze_main_benchmark(
     breach_col = schema.breach_col
     n_pre_conformal_trials_col = schema.n_pre_conformal_trials_col
     n_quantiles_col = schema.sampler_n_quantiles_col
+    n_candidates_col = schema.n_candidates_col
     searcher_tuning_framework_col = schema.tuner_searcher_tuning_framework_col
 
     processor = BenchmarkDataProcessor(schema=schema)
@@ -1062,6 +1065,55 @@ def analyze_main_benchmark(
                     filename_prefix=f"perf_vs_{budget_unit}_search_tuning_effect__{benchmark}",
                     analysis_type=analysis_type,
                     subfolder="search_tuning_effect_comparison",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+
+    # Number of candidates comparison analysis:
+    if "num_candidates_comparison" in analysis_components:
+        if len(raw_benchmark_data[sampler_col].unique()) > 1:
+            raise ValueError(
+                "Number of candidates comparison analysis requires only one sampler."
+            )
+        for benchmark in raw_benchmark_data[bench_col].unique():
+            benchmark_data = raw_benchmark_data[
+                raw_benchmark_data[bench_col] == benchmark
+            ]
+            # NOTE: Raw data for this component is expected to contain ccqr_optimization
+            # variants where we want to rank a same sampler, repeated for
+            # many architectures, ranked across varying levels of n_candidates, hence
+            # 'extra_ranking_cols=[estimator_architecture_col, sampler_col]':
+            for budget_unit in [runtime_unit, iter_unit]:
+                num_candidates_comparison_results = (
+                    processor.process_performance_records(
+                        raw_benchmark_data=benchmark_data,
+                        budget_unit=budget_unit,
+                        relativize_budget=True,
+                        collapse_repetitions=True,
+                        collapse_datasets=True,
+                        extra_ranking_cols=[estimator_architecture_col, sampler_col],
+                        n_bootstraps=n_bootstraps,
+                    )
+                )
+                num_candidates_comparison_results[
+                    "plotting_identifier"
+                ] = num_candidates_comparison_results[n_candidates_col].apply(
+                    lambda x: f"{int(x)} Candidates"
+                )
+                plot_and_save(
+                    data=num_candidates_comparison_results,
+                    x_col=f"normalized_{budget_unit}",
+                    y_cols=["rank"],
+                    entity_col="plotting_identifier",
+                    col_measure=estimator_architecture_col,
+                    row_measure=sampler_col,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"perf_vs_{budget_unit}_num_candidates_variation__{benchmark}",
+                    analysis_type=analysis_type,
+                    subfolder="num_candidates_comparison",
                     y_cols_lower=["rank_lower"],
                     y_cols_upper=["rank_upper"],
                     share_y_axis=False,

@@ -122,6 +122,8 @@ class TunerConfig(BaseModel):
         tuner: The tuner model configuration (backend-specific).
         tuner_identifier: Human-readable identifier for the tuner configuration.
         searcher_tuning_framework: Framework for tuning the search algorithm itself.
+        n_candidates: Number of candidate configurations to sample during acquisition
+            function maximization. Overrides the global default when set.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -134,6 +136,7 @@ class TunerConfig(BaseModel):
     ]
     tuner_identifier: str
     searcher_tuning_framework: Optional[Literal["reward_cost", "fixed"]] = None
+    n_candidates: Optional[int] = None
 
 
 class ExperimentConfig(BaseModel):

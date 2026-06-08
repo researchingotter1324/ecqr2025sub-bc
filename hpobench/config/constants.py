@@ -1,6 +1,8 @@
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 
+DEFAULT_N_CANDIDATES: int = 5000
+
 
 class ExperimentParameters(BaseModel):
     """Default parameters for hyperparameter optimization experiments.

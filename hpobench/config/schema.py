@@ -17,6 +17,7 @@ class BenchmarkDataSchema(BaseModel):
         confidence_level_col: Column for confidence level values.
         estimator_architecture_col: Column for quantile estimator architecture.
         sampler_n_quantiles_col: Column for number of quantiles used.
+        n_candidates_col: Column for number of candidate configurations sampled during acquisition.
         sampler_adapter_col: Column for adaptive conformal method.
         tuner_searcher_tuning_framework_col: Column for searcher tuning framework.
         n_pre_conformal_trials_col: Column for pre-conformal trial count.
@@ -42,6 +43,7 @@ class BenchmarkDataSchema(BaseModel):
     confidence_level_col: str = "confidence_level"
     estimator_architecture_col: str = "estimator_architecture"
     sampler_n_quantiles_col: str = "sampler_n_quantiles"
+    n_candidates_col: str = "n_candidates"
     sampler_adapter_col: str = "sampler_adapter"
     tuner_searcher_tuning_framework_col: str = "tuner_searcher_tuning_framework"
     n_pre_conformal_trials_col: str = "n_pre_conformal_trials"
