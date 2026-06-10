@@ -37,6 +37,7 @@ class BenchmarkDataProcessor:
         self.confidence_level_col = schema.confidence_level_col
         self.estimator_architecture_col = schema.estimator_architecture_col
         self.sampler_n_quantiles = schema.sampler_n_quantiles_col
+        self.n_candidates = schema.n_candidates_col
         self.sampler_adapter = schema.sampler_adapter_col
         self.tuner_searcher_tuning_framework = (
             schema.tuner_searcher_tuning_framework_col
@@ -45,6 +46,8 @@ class BenchmarkDataProcessor:
         self.runtime_unit = schema.runtime_unit
         self.iter_unit = schema.iter_unit
         self.breach_column = schema.breach_col
+        self.extreme_quantile_used_col = schema.extreme_quantile_used_col
+        self.cumulative_extreme_quantile_rate_col = "cumulative_extreme_quantile_rate"
         self.cumulative_coverage_error_col = schema.cumulative_coverage_error_col
         self.rolling_coverage_error_col = schema.rolling_coverage_error_col
 
@@ -54,6 +57,7 @@ class BenchmarkDataProcessor:
             self.confidence_level_col,
             self.estimator_architecture_col,
             self.sampler_n_quantiles,
+            self.n_candidates,
             self.sampler_adapter,
             self.tuner_searcher_tuning_framework,
             self.n_pre_conformal_trials,
@@ -74,12 +78,14 @@ class BenchmarkDataProcessor:
             self.confidence_level_col,
             self.estimator_architecture_col,
             self.sampler_n_quantiles,
+            self.n_candidates,
             self.sampler_adapter,
             self.tuner_searcher_tuning_framework,
             self.n_pre_conformal_trials,
             self.runtime_unit,
             self.iter_unit,
             self.breach_column,
+            self.extreme_quantile_used_col,
         ]
 
     def _validate_and_clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -253,6 +259,41 @@ class BenchmarkDataProcessor:
 
         return sorted_data
 
+    def accumulate_extreme_quantile_rate(
+        self, data: pd.DataFrame, budget_unit: str
+    ) -> pd.DataFrame:
+        """Tracks the cumulative rate at which configurations were acquired via the
+        lowest (extreme) quantile bound.
+
+        Mirrors the structure of ``accumulate_breaches``: the binary
+        ``extreme_quantile_used`` indicator is expanded into a per-repetition
+        cumulative mean, producing ``cumulative_extreme_quantile_rate``.
+        Rows where the indicator is absent (e.g. non-ccqr tuners, warm-start
+        trials) receive NaN so that they remain distinguishable from genuine
+        zeros.
+        """
+        data_cleaned = data.copy()
+        data_cleaned[self.extreme_quantile_used_col] = data_cleaned[
+            self.extreme_quantile_used_col
+        ].replace({"": np.nan, None: np.nan})
+        data_cleaned[self.extreme_quantile_used_col] = pd.to_numeric(
+            data_cleaned[self.extreme_quantile_used_col], errors="coerce"
+        )
+
+        sorted_data = data_cleaned.sort_values(
+            by=self.repetition_level + [budget_unit],
+            ascending=True,
+        ).reset_index(drop=True)
+
+        sorted_data[self.cumulative_extreme_quantile_rate_col] = (
+            sorted_data.groupby(self.repetition_level)[self.extreme_quantile_used_col]
+            .expanding()
+            .mean()
+            .reset_index(level=self.repetition_level, drop=True)
+        )
+
+        return sorted_data
+
     def time_discretize_data(
         self, data: pd.DataFrame, budget_unit: str = "runtime"
     ) -> pd.DataFrame:
@@ -422,7 +463,8 @@ class BenchmarkDataProcessor:
             metric_column="best_performance",
         )
 
-        final_data = self.accumulate_breaches(ranked_data, self.iter_unit)
+        breach_data = self.accumulate_breaches(ranked_data, self.iter_unit)
+        final_data = self.accumulate_extreme_quantile_rate(breach_data, self.iter_unit)
 
         # Step 5: Relativize budget if requested
         budget_unit = self.iter_unit
@@ -434,6 +476,7 @@ class BenchmarkDataProcessor:
                 "best_performance",
                 self.cumulative_coverage_error_col,
                 self.rolling_coverage_error_col,
+                self.cumulative_extreme_quantile_rate_col,
             ]
         if relativize_budget:
             final_data = self.standardize_budget_to_percentage(

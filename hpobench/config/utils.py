@@ -1,7 +1,7 @@
 from typing import Union, Optional, List, Any
 import warnings
 from hpobench.config.config_types import CCQRModel
-from hpobench.config.constants import DEFAULT_N_CANDIDATES
+from hpobench.config.constants import ExperimentParameters
 
 try:
     from ccqr_optimization.selection.acquisition import (
@@ -152,7 +152,7 @@ def build_sampler_variation_configurations(
     n_pre_conformal_trials: int = 20,
     searcher_tuning_framework: Optional[str] = None,
     calibration_split_strategy: str = "train_test_split",
-    n_candidates: Optional[int] = None,
+    n_candidates: int = ExperimentParameters().n_candidates,
 ) -> List[TunerConfig]:
     """Build tuning configurations for different samplers with a fixed quantile architecture.
 
@@ -163,7 +163,6 @@ def build_sampler_variation_configurations(
         searcher_tuning_framework: Value to set in TunerConfig for searcher_tuning_framework.
         calibration_split_strategy: Value to set in QuantileConformalSearcher for calibration_split_strategy.
         n_candidates: Number of candidate configurations for acquisition function maximization.
-            Defaults to None, which resolves to DEFAULT_N_CANDIDATES at tune time.
     Returns:
         List of tuning configuration objects for each sampler.
     """
@@ -204,7 +203,7 @@ def build_architecture_variation_configurations(
     n_pre_conformal_trials: int = 20,
     searcher_tuning_framework: Optional[str] = None,
     calibration_split_strategy: str = "train_test_split",
-    n_candidates: Optional[int] = None,
+    n_candidates: int = ExperimentParameters().n_candidates,
 ) -> List[TunerConfig]:
     """Build tuning configurations for different quantile architectures and samplers.
 
@@ -215,7 +214,6 @@ def build_architecture_variation_configurations(
         searcher_tuning_framework: Value to set in TunerConfig for searcher_tuning_framework.
         calibration_split_strategy: Value to set in QuantileConformalSearcher for calibration_split_strategy.
         n_candidates: Number of candidate configurations for acquisition function maximization.
-            Defaults to None, which resolves to DEFAULT_N_CANDIDATES at tune time.
 
     Returns:
         List of tuning configuration objects for each architecture and sampler combination.

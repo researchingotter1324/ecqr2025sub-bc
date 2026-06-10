@@ -10,7 +10,7 @@ from hpobench.config.config_types import (
     OptunaModel,
     SMACModel,
 )
-from hpobench.config.constants import DEFAULT_N_CANDIDATES
+from hpobench.config.constants import ExperimentParameters
 from smac.acquisition.maximizer.random_search import RandomSearch
 
 try:
@@ -169,6 +169,7 @@ def build_history_entry(
     miscoverage_penalty: Optional[float] = None,
     tabularized_configuration: Optional[Any] = None,
     acquisition_source: Optional[str] = None,
+    extreme_quantile_used: Optional[int] = None,
 ) -> dict[str, Any]:
     """Creates a standardized dictionary entry for tuning history records.
 
@@ -185,6 +186,9 @@ def build_history_entry(
         miscoverage_penalty: Penalty for prediction interval not containing true value.
         tabularized_configuration: Processed configuration data for analysis.
         acquisition_source: Identifier for the acquisition function used.
+        extreme_quantile_used: Binary indicator (0/1) of whether the selected
+            configuration was acquired via the lowest (extreme) quantile bound.
+            Only applicable to ccqr_optimization tuners.
 
     Returns:
         Dictionary containing all trial information with standardized keys.
@@ -202,6 +206,7 @@ def build_history_entry(
         "miscoverage_penalty": miscoverage_penalty,
         "tabularized_configuration": tabularized_configuration,
         "acquisition_source": acquisition_source,
+        "extreme_quantile_used": extreme_quantile_used,
     }
 
 
@@ -315,7 +320,7 @@ def optuna_tune(
     random_state: Optional[int] = None,
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
-    n_candidates: int = DEFAULT_N_CANDIDATES,
+    n_candidates: int = ExperimentParameters().n_candidates,
 ) -> pd.DataFrame:
     """Runs hyperparameter optimization using Optuna with a synthetic objective function.
 
@@ -469,7 +474,7 @@ def ccqr_optimization_tune(
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
     searcher_tuning_framework: Optional[str] = None,
-    n_candidates: int = DEFAULT_N_CANDIDATES,
+    n_candidates: int = ExperimentParameters().n_candidates,
 ) -> pd.DataFrame:
     """Runs conformal hyperparameter optimization using the ccqr_optimization framework with synthetic objectives.
 
@@ -546,6 +551,16 @@ def ccqr_optimization_tune(
             winkler_score = None
             width = None
             miscoverage_penalty = None
+
+        # Binary indicator of whether this trial's configuration was acquired via
+        # the lowest (extreme) quantile bound. Only present on ccqr study trials.
+        extreme_quantile_used_raw = getattr(trial, "extreme_quantile_used", None)
+        extreme_quantile_used = (
+            int(extreme_quantile_used_raw)
+            if extreme_quantile_used_raw is not None
+            else None
+        )
+
         history.append(
             build_history_entry(
                 end_time=all_runtimes[idx],
@@ -558,6 +573,7 @@ def ccqr_optimization_tune(
                 width=width,
                 miscoverage_penalty=miscoverage_penalty,
                 tabularized_configuration=trial.tabularized_configuration,
+                extreme_quantile_used=extreme_quantile_used,
             )
         )
     return pd.DataFrame(history)
@@ -630,7 +646,7 @@ def smac_tune(
     random_state: Optional[int] = None,
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
-    n_candidates: int = DEFAULT_N_CANDIDATES,
+    n_candidates: int = ExperimentParameters().n_candidates,
 ) -> pd.DataFrame:
     """Runs Bayesian optimization using SMAC3 with Random Forest surrogate and acquisition functions.
 
@@ -759,7 +775,6 @@ def tune(
     random_state: Optional[int] = None,
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
-    n_candidates: Optional[int] = None,
 ) -> pd.DataFrame:
     """Unified tuning interface for optuna, ccqr_optimization, and smac.
 
@@ -771,19 +786,10 @@ def tune(
         random_state: Optional random seed.
         n_trials: Optional number of trials.
         timeout: Optional time budget in seconds.
-        n_candidates: Number of candidate configurations for acquisition function maximization.
-            Falls back to the value stored in tuner_config, then to DEFAULT_N_CANDIDATES.
 
     Returns:
         DataFrame with tuning history.
     """
-    # Resolve effective n_candidates: explicit argument > tuner_config field > global default
-    effective_n_candidates = (
-        n_candidates
-        if n_candidates is not None
-        else (tuner_config.n_candidates if tuner_config.n_candidates is not None else DEFAULT_N_CANDIDATES)
-    )
-
     # Shared arguments for all tuner functions:
     shared_kwargs = {
         "tuner_model": tuner_config.tuner,
@@ -793,22 +799,20 @@ def tune(
         "random_state": random_state,
         "n_trials": n_trials,
         "timeout": timeout,
+        "n_candidates": tuner_config.n_candidates,
     }
 
     if tuner_config.tuner.backend == "optuna":
         history = optuna_tune(
-            n_candidates=effective_n_candidates,
             **shared_kwargs,
         )
     elif tuner_config.tuner.backend == "ccqr_optimization":
         history = ccqr_optimization_tune(
             searcher_tuning_framework=tuner_config.searcher_tuning_framework,
-            n_candidates=effective_n_candidates,
             **shared_kwargs,
         )
     elif tuner_config.tuner.backend == "smac":
         history = smac_tune(
-            n_candidates=effective_n_candidates,
             **shared_kwargs,
         )
     else:

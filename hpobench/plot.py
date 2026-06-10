@@ -1182,3 +1182,161 @@ def plot_joint_architecture_and_static(
 
     plt.close(fig)
     logger.debug(f"Joint plots saved in {output_path} with prefix {filename_prefix}")
+
+
+def plot_joint_candidates_and_extreme_quantile(
+    search_performance_df: pd.DataFrame,
+    extreme_quantile_df: pd.DataFrame,
+    cache_path: str,
+    run_start_str: str,
+    filename_prefix: str,
+    analysis_type: str,
+    subfolder: str,
+    schema: BenchmarkDataSchema,
+) -> None:
+    """Plot joint analysis of candidate-count search ranks and extreme-quantile usage.
+
+    Produces a two-panel figure (one row per benchmark) for a single estimator
+    architecture and sampler, with one line per number-of-candidates value:
+    - Left panel: search performance rank over the normalized iteration budget.
+    - Right panel: percentage of trials acquired via the lowest (extreme) quantile bound.
+    """
+    path_manager = AnalysisPathManager(cache_path, run_start_str)
+    output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
+    plot_path = os.path.join(output_path, filename_prefix)
+
+    row_measure = schema.bench_col
+    identifier_col = "plotting_identifier"
+    row_values = search_performance_df[row_measure].unique()
+
+    # Consistent color per number-of-candidates identifier across both panels:
+    def _identifier_sort_key(identifier: str) -> float:
+        match = re.match(r"^(\d+(?:\.\d+)?)", str(identifier))
+        return float(match.group(1)) if match else float("inf")
+
+    all_identifiers = sorted(
+        set(search_performance_df[identifier_col]).union(
+            extreme_quantile_df[identifier_col]
+        ),
+        key=_identifier_sort_key,
+    )
+    color_map = {
+        identifier: DEFAULT_COLOR_PALETTE[idx % len(DEFAULT_COLOR_PALETTE)]
+        for idx, identifier in enumerate(all_identifiers)
+    }
+
+    base_width = 4.0
+    base_height = 4.5
+    fig_width = base_width * 2
+    fig_height = base_height * len(row_values)
+
+    fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
+    gs = GridSpec(nrows=len(row_values), ncols=2, figure=fig)
+
+    legend_handles = []
+    legend_labels = []
+
+    for i, row_value in enumerate(row_values):
+        ax_search = fig.add_subplot(gs[i, 0])
+        ax_extreme = fig.add_subplot(gs[i, 1])
+
+        search_row_data = search_performance_df[
+            search_performance_df[row_measure] == row_value
+        ]
+
+        for identifier in all_identifiers:
+            entity_data = search_row_data[
+                search_row_data[identifier_col] == identifier
+            ]
+            if entity_data.empty:
+                continue
+            color = color_map[identifier]
+            line = ax_search.plot(
+                entity_data[schema.norm_iter_unit],
+                entity_data["rank"],
+                label=identifier,
+                alpha=0.8,
+                color=color,
+                marker=None,
+                markersize=4,
+            )[0]
+            if i == 0:
+                legend_handles.append(line)
+                legend_labels.append(identifier)
+            if (
+                "rank_lower" in entity_data.columns
+                and "rank_upper" in entity_data.columns
+            ):
+                ax_search.fill_between(
+                    entity_data[schema.norm_iter_unit],
+                    entity_data["rank_lower"],
+                    entity_data["rank_upper"],
+                    alpha=0.2,
+                    color=color,
+                )
+
+        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=13)
+        ax_search.set_ylabel("Rank", fontsize=13, labelpad=10)
+        ax_search.set_title(f"Optimization Performance: {row_value}", fontsize=13, pad=20)
+        ax_search.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+        for spine in ["top", "right", "bottom", "left"]:
+            ax_search.spines[spine].set_linewidth(1.2)
+        ax_search.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
+        ax_search.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+
+        extreme_row_data = extreme_quantile_df[
+            extreme_quantile_df[row_measure] == row_value
+        ]
+
+        for identifier in all_identifiers:
+            entity_data = extreme_row_data[
+                extreme_row_data[identifier_col] == identifier
+            ].sort_values(by=schema.iter_unit)
+            if entity_data.empty:
+                continue
+            color = color_map[identifier]
+            ax_extreme.plot(
+                entity_data[schema.iter_unit],
+                entity_data["cumulative_extreme_quantile_rate"] * 100,
+                label=identifier,
+                alpha=0.8,
+                color=color,
+                marker=None,
+                markersize=4,
+            )
+
+        ax_extreme.set_xlabel("Iteration (Trial)", fontsize=13)
+        ax_extreme.set_ylabel("Extreme Quantile Used (%)", fontsize=13, labelpad=10)
+        ax_extreme.set_title(f"Extreme Quantile Usage: {row_value}", fontsize=13, pad=20)
+        ax_extreme.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+        for spine in ["top", "right", "bottom", "left"]:
+            ax_extreme.spines[spine].set_linewidth(1.2)
+        ax_extreme.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
+        ax_extreme.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+
+    handles, labels = _sort_legend_items(legend_handles, legend_labels)
+    num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
+    legend_anchor_y, legend_bottom_margin = _calculate_legend_position(
+        len(row_values), num_legend_rows, "standard"
+    )
+
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=min(4, len(labels)),
+            fontsize=12,
+            bbox_to_anchor=(0.5, legend_anchor_y),
+            frameon=False,
+        )
+
+    fig.subplots_adjust(wspace=0.25, hspace=0.22, bottom=legend_bottom_margin, top=0.90, left=0.09, right=0.98)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    for fmt in PLOT_FORMATS:
+        full_path = f"{plot_path}_{timestamp}.{fmt}"
+        fig.savefig(full_path, dpi=PLOT_DPI, bbox_inches="tight", format=fmt)
+
+    plt.close(fig)
+    logger.debug(f"Joint plots saved in {output_path} with prefix {filename_prefix}")

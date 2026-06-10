@@ -25,6 +25,8 @@ class BenchmarkDataSchema(BaseModel):
         tuning_iterations_col: Column for tuning iteration count.
         estimator_error_col: Column for quantile estimator error.
         breach_col: Column for coverage breach status.
+        extreme_quantile_used_col: Column for binary indicator of whether a trial's
+            performance was obtained via the lowest (extreme) quantile bound.
         runtime_unit: Base name for runtime columns.
         iter_unit: Base name for iteration columns.
         norm_runtime_unit: Name for normalized runtime columns.
@@ -51,6 +53,7 @@ class BenchmarkDataSchema(BaseModel):
     tuning_iterations_col: str = "tuning_iterations"
     estimator_error_col: str = "mean_pinball_loss"
     breach_col: str = "breach_status"
+    extreme_quantile_used_col: str = "extreme_quantile_used"
 
     runtime_unit: str = "runtime"
     iter_unit: str = "iteration"

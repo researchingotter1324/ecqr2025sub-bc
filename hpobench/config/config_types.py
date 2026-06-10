@@ -10,6 +10,7 @@ except ImportError:
         "ccqr_optimization is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
     )
 from hpobench.generation.generate import ObjectiveMetricGenerator
+from hpobench.config.constants import ExperimentParameters
 
 
 class FloatRange(BaseModel):
@@ -123,7 +124,7 @@ class TunerConfig(BaseModel):
         tuner_identifier: Human-readable identifier for the tuner configuration.
         searcher_tuning_framework: Framework for tuning the search algorithm itself.
         n_candidates: Number of candidate configurations to sample during acquisition
-            function maximization. Overrides the global default when set.
+            function maximization. Defaults to the experiment-wide default.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -136,7 +137,7 @@ class TunerConfig(BaseModel):
     ]
     tuner_identifier: str
     searcher_tuning_framework: Optional[Literal["reward_cost", "fixed"]] = None
-    n_candidates: Optional[int] = None
+    n_candidates: int = ExperimentParameters().n_candidates
 
 
 class ExperimentConfig(BaseModel):

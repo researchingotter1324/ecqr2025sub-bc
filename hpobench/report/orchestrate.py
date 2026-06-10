@@ -32,13 +32,14 @@ from hpobench.prepare import (
     setup_nas301_configs,
 )
 from hpobench.config.schema import BenchmarkDataSchema
-from hpobench.config.constants import Aliases, ExperimentParameters, DEFAULT_N_CANDIDATES
+from hpobench.config.constants import Aliases, ExperimentParameters
 from hpobench.config.utils import _fmt_float
 
 from hpobench.tune import tune
 from hpobench.report.analyze import (
     analyze_main_benchmark,
     analyze_joint_architecture_and_static,
+    analyze_joint_candidates_and_extreme_quantile,
 )
 
 logger = logging.getLogger(__name__)
@@ -227,7 +228,6 @@ def _process_single_experiment_config(
                 params=experiment_config.search_space,
                 warm_start_configs=warm_start_configs_per_repetition[repetition],
                 random_state=base_random_state + repetition,
-                n_candidates=tuner.n_candidates,
             )
 
             historical_performance = add_runtime(
@@ -307,13 +307,6 @@ def _process_single_experiment_config(
                 sampler_adapter = ""
                 tuner_searcher_tuning_framework = ""
 
-            # Resolve effective n_candidates for this tuner config:
-            tuner_n_candidates = (
-                tuner.n_candidates
-                if tuner.n_candidates is not None
-                else DEFAULT_N_CANDIDATES
-            )
-
             aliased_estimator_architecture = (
                 aliases.architecture_aliases[estimator_architecture]
                 if estimator_architecture in aliases.architecture_aliases
@@ -353,7 +346,7 @@ def _process_single_experiment_config(
                 "n_pre_conformal_trials"
             ] = n_pre_conformal_trials
             historical_performance["sampler_n_quantiles"] = sampler_n_quantiles
-            historical_performance["n_candidates"] = tuner_n_candidates
+            historical_performance["n_candidates"] = tuner.n_candidates
             historical_performance["sampler_adapter"] = sampler_adapter
             historical_performance[
                 "tuner_searcher_tuning_framework"
@@ -641,6 +634,68 @@ def run_and_analyze_joint_benchmark(
     analyze_joint_architecture_and_static(
         main_raw_data=raw_main_data,
         static_raw_data=static_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        analysis_type=analysis_type,
+        schema=schema,
+    )
+
+
+def run_and_analyze_joint_candidates_extreme_quantile_benchmark(
+    benchmarks: list[
+        Literal[
+            "jahs201",
+            "lcbench",
+            "rbv2_aknn",
+            "LCBench-L",
+            "LCBench-H",
+            "LCBench-A",
+            "rbv2_aknn-L",
+            "rbv2_aknn-H",
+            "rbv2_aknn-A",
+        ]
+    ],
+    tuning_configurations: list[TunerConfig],
+    n_warm_starts: int,
+    n_trials: int,
+    timeout: Optional[float],
+    base_random_state: int,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
+    schema: BenchmarkDataSchema,
+    max_n_instances_per_benchmark: int = 10,
+    n_repetitions: int = 10,
+    datasets_per_benchmark: Optional[list[list[str]]] = None,
+    parallelize: bool = False,
+) -> None:
+    """Execute the candidate-count benchmark, then jointly plot search ranks and extreme-quantile usage.
+
+    The tuning configurations must all share a single estimator architecture and a
+    single sampler, varying only in the number of candidates; this is enforced
+    downstream in the analysis step.
+    """
+    experiment_configs = load_experiment_configs(
+        benchmarks=benchmarks,
+        tuning_configurations=tuning_configurations,
+        n_warm_starts=n_warm_starts,
+        n_trials=n_trials,
+        timeout=timeout,
+        max_n_instances_per_benchmark=max_n_instances_per_benchmark,
+        datasets_per_benchmark=datasets_per_benchmark,
+    )
+
+    raw_benchmark_data = run_main_benchmark(
+        experiment_configs=experiment_configs,
+        n_repetitions=n_repetitions,
+        base_random_state=base_random_state,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        parallelize=parallelize,
+    )
+
+    analyze_joint_candidates_and_extreme_quantile(
+        raw_benchmark_data=raw_benchmark_data,
         cache_path=cache_path,
         run_start_str=run_start_str,
         analysis_type=analysis_type,

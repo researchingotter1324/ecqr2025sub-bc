@@ -1,8 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 
-DEFAULT_N_CANDIDATES: int = 5000
-
 
 class ExperimentParameters(BaseModel):
     """Default parameters for hyperparameter optimization experiments.
@@ -14,6 +12,8 @@ class ExperimentParameters(BaseModel):
         n_warm_starts: Default number of random initialization trials.
         n_coverage_warm_starts: Random trials for coverage analysis.
         default_max_n_instances: Maximum parallel instances for experiments.
+        n_candidates: Default number of candidate configurations sampled during
+            acquisition function maximization.
         static_data_sizes: Data sizes for static analysis experiments.
         static_tuning_iterations: Tuning iterations for static analysis.
         small_n_repetitions_per_tuner_config: Repetitions for small experiments.
@@ -28,6 +28,7 @@ class ExperimentParameters(BaseModel):
     n_warm_starts: int = 15
     n_coverage_warm_starts: int = 15
     default_max_n_instances: int = 10
+    n_candidates: int = 2000
 
     static_data_sizes: List[int] = [25, 50, 100, 200, 400]
     static_tuning_iterations: List[int] = [0]

@@ -8,6 +8,7 @@ from hpobench.plot import (
     plot_and_save,
     plot_paired_rank_and_cd,
     plot_joint_architecture_and_static,
+    plot_joint_candidates_and_extreme_quantile,
 )
 from hpobench.process import (
     BenchmarkDataProcessor,
@@ -1384,5 +1385,119 @@ def analyze_joint_architecture_and_static(
         filename_prefix="joint_architecture_and_static",
         analysis_type=analysis_type,
         subfolder="joint_analysis",
+        schema=schema,
+    )
+
+
+def analyze_joint_candidates_and_extreme_quantile(
+    raw_benchmark_data: pd.DataFrame,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
+    schema: BenchmarkDataSchema,
+    n_bootstraps: int = 1000,
+) -> None:
+    """Process candidate-count search performance and extreme-quantile usage, then plot jointly.
+
+    Produces a two-panel figure (one row per benchmark) for a single estimator
+    architecture and a single sampler, with one line per number-of-candidates value:
+    - Left panel: search performance ranks over the (normalized) iteration budget.
+    - Right panel: percentage of trials whose configuration was acquired via the
+      lowest (extreme) quantile bound, averaged across repetitions and datasets.
+
+    Exactly one estimator architecture and one sampler must be present in the data.
+
+    Args:
+        raw_benchmark_data: Raw benchmark data for a single architecture/sampler across
+            multiple numbers of candidates.
+        cache_path: Root directory for saving analysis outputs.
+        run_start_str: Timestamp identifier for this experimental run.
+        analysis_type: Analysis category label for file organization.
+        schema: Data schema defining column names.
+        n_bootstraps: Number of bootstrap samples for confidence intervals.
+
+    Raises:
+        ValueError: If more than one estimator architecture or sampler is present.
+    """
+    estimator_architecture_col = schema.estimator_architecture_col
+    sampler_col = schema.sampler_col
+    n_candidates_col = schema.n_candidates_col
+
+    if raw_benchmark_data[estimator_architecture_col].nunique() != 1:
+        raise ValueError(
+            "Joint candidates / extreme-quantile analysis requires exactly one "
+            "estimator architecture."
+        )
+    if raw_benchmark_data[sampler_col].nunique() != 1:
+        raise ValueError(
+            "Joint candidates / extreme-quantile analysis requires exactly one sampler."
+        )
+
+    processor = BenchmarkDataProcessor(schema=schema)
+    iter_unit = schema.iter_unit
+
+    # Left panel: search-performance ranks, normalized budget (like quantile-count comparison).
+    # relativize_budget=True so the x-axis is 0-100% and collapse_datasets uses block-bootstrap
+    # to produce rank_lower/rank_upper.
+    search_performance_results = processor.process_performance_records(
+        raw_benchmark_data=raw_benchmark_data,
+        budget_unit=iter_unit,
+        relativize_budget=True,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=[estimator_architecture_col, sampler_col],
+        n_bootstraps=n_bootstraps,
+    )
+    search_performance_results["rank_lower"] = search_performance_results[
+        "rank_lower"
+    ].fillna(search_performance_results["rank"])
+    search_performance_results["rank_upper"] = search_performance_results[
+        "rank_upper"
+    ].fillna(search_performance_results["rank"])
+    search_performance_results["plotting_identifier"] = search_performance_results[
+        n_candidates_col
+    ].apply(lambda x: f"{int(x)} Candidates")
+
+    save_analysis_results(
+        df=search_performance_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="joint_candidates_search_performance_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    # Right panel: cumulative extreme-quantile usage rate, absolute iteration budget.
+    # relativize_budget=False so that cumulative_extreme_quantile_rate is included in
+    # the metrics list inside process_iteration_budget_data, exactly mirroring how
+    # cumulative_coverage_error is produced and collapsed for coverage plots.
+    extreme_quantile_results = processor.process_performance_records(
+        raw_benchmark_data=raw_benchmark_data,
+        budget_unit=iter_unit,
+        relativize_budget=False,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=[estimator_architecture_col, sampler_col],
+        n_bootstraps=n_bootstraps,
+    )
+    extreme_quantile_results["plotting_identifier"] = extreme_quantile_results[
+        n_candidates_col
+    ].apply(lambda x: f"{int(x)} Candidates")
+
+    save_analysis_results(
+        df=extreme_quantile_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="joint_candidates_extreme_quantile_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    plot_joint_candidates_and_extreme_quantile(
+        search_performance_df=search_performance_results,
+        extreme_quantile_df=extreme_quantile_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename_prefix="joint_candidates_and_extreme_quantile",
+        analysis_type=analysis_type,
+        subfolder="joint_candidates_analysis",
         schema=schema,
     )

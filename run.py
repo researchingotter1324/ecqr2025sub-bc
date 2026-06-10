@@ -8,6 +8,7 @@ from hpobench.config.tuner_configurations import (
     SEARCH_TUNING_EFFECT_CONFIGURATIONS,
     LOWERBOUND_ABLATION_CONFIGURATIONS,
     NUM_CANDIDATES_VARIATION_CONFIGURATIONS,
+    NUM_CANDIDATES_JOINT_CONFIGURATIONS,
     STATIC_ARCHITECTURES,
 )
 from hpobench.config.constants import ExperimentParameters
@@ -20,6 +21,7 @@ from hpobench.report.orchestrate import (
     run_and_analyze_main_benchmark,
     run_static_benchmark,
     run_and_analyze_joint_benchmark,
+    run_and_analyze_joint_candidates_extreme_quantile_benchmark,
 )
 from hpobench.utils import setup_environment
 import numpy as np
@@ -43,7 +45,8 @@ run_sections = {
     "run_quantile_count_comparison": True,
     # "run_search_tuning_effect_comparison": False,
     "run_joint_run_analysis": True,
-    # "run_num_candidates_comparison": True,
+    # "run_num_candidates_comparison": False,
+    "run_joint_candidates_extreme_quantile_analysis": True,
 }
 
 
@@ -196,7 +199,9 @@ def main():
                 parallelize=True,
                 benchmarks=[
                     "LCBench-H",
-                    "LCBench-A"
+                    "LCBench-A",
+                    "rbv2_aknn-H",
+                    "rbv2_aknn-A",
                  ],
                 tuning_configurations=LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS
                 + EXTERNAL_TUNING_CONFIGURATIONS,
@@ -322,7 +327,31 @@ def main():
         except Exception as e:
             logger.error(f"Error in task {name}: {e}", exc_info=True)
 
-    if run_sections["run_joint_run_analysis"]:
+    # Joint candidates / extreme-quantile analysis
+    if run_sections.get("run_joint_candidates_extreme_quantile_analysis", False):
+        name = "joint_candidates_extreme_quantile_analysis"
+        logger.info("Starting joint candidates / extreme-quantile analysis")
+        try:
+            run_and_analyze_joint_candidates_extreme_quantile_benchmark(
+                parallelize=True,
+                benchmarks=["LCBench-L"],
+                tuning_configurations=NUM_CANDIDATES_JOINT_CONFIGURATIONS,
+                n_warm_starts=experiment_params.n_warm_starts,
+                n_trials=experiment_params.n_trials,
+                timeout=experiment_params.timeout,
+                base_random_state=BASE_RANDOM_STATE,
+                cache_path=CACHE_PATH,
+                run_start_str=run_start_str,
+                analysis_type="11_joint_candidates_extreme_quantile",
+                max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
+                n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
+                schema=schema,
+            )
+            logger.info(f"Completed task: {name}")
+        except Exception as e:
+            logger.error(f"Error in task {name}: {e}", exc_info=True)
+
+    if run_sections.get("run_joint_run_analysis", False):
         name = "joint_run_analysis"
         logger.info("Starting joint run analysis")
         try:
@@ -355,7 +384,7 @@ def main():
         try:
             run_and_analyze_main_benchmark(
                 parallelize=True,
-                benchmarks=["rbv2_aknn-L"],
+                benchmarks=["LCBench-L"],
                 tuning_configurations=LOWERBOUND_ABLATION_CONFIGURATIONS,
                 n_warm_starts=experiment_params.n_warm_starts,
                 n_trials=experiment_params.n_trials,
