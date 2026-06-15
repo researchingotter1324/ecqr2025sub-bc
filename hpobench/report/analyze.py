@@ -227,6 +227,46 @@ def plot_cd_diagram(
     )
 
 
+def build_grouped_benchmark_data(
+    benchmark_data: pd.DataFrame,
+    groups: dict,
+    bench_col: str,
+    data_col: str,
+) -> Optional[pd.DataFrame]:
+    """Build a concatenated DataFrame where benchmarks are merged into named groups.
+
+    Follows the same pattern used to build global benchmark data: dataset names are
+    prefixed with their source benchmark to keep them unique across groups, then the
+    benchmark column is replaced by the group label.  Only groups whose member
+    benchmarks are all present in the data are included; groups with no matching
+    benchmarks are silently skipped.
+
+    Args:
+        benchmark_data: Raw benchmark DataFrame containing bench_col and data_col.
+        groups: Mapping of ``{group_label: [bench_name, ...]}``.  Each list should
+            contain the benchmarks to merge into that group.
+        bench_col: Column name for the benchmark identifier.
+        data_col: Column name for the dataset identifier.
+
+    Returns:
+        Concatenated DataFrame with group labels in bench_col, or None if no group
+        has at least two member benchmarks present in the data.
+    """
+    present_benchmarks = set(benchmark_data[bench_col].unique())
+    group_frames = []
+    for group_label, members in groups.items():
+        matched = [b for b in members if b in present_benchmarks]
+        if len(matched) < 2:
+            continue
+        group_slice = benchmark_data[benchmark_data[bench_col].isin(matched)].copy()
+        group_slice[data_col] = group_slice[bench_col] + "_" + group_slice[data_col]
+        group_slice[bench_col] = group_label
+        group_frames.append(group_slice)
+    if not group_frames:
+        return None
+    return pd.concat(group_frames, ignore_index=True)
+
+
 def analyze_main_benchmark(
     raw_benchmark_data: pd.DataFrame,
     cache_path: str,
@@ -694,6 +734,57 @@ def analyze_main_benchmark(
             x_label="% Budget Used",
         )
 
+        benchmark_groups = {
+            "LCBench-A + rbv2_aknn-A": ["LCBench-A", "rbv2_aknn-A"],
+            "LCBench-H + rbv2_aknn-H": ["LCBench-H", "rbv2_aknn-H"],
+        }
+        grouped_benchmark_data = build_grouped_benchmark_data(
+            benchmark_data=benchmark_data,
+            groups=benchmark_groups,
+            bench_col=bench_col,
+            data_col=data_col,
+        )
+        if grouped_benchmark_data is not None:
+            for budget_unit, norm_unit, filename_suffix in [
+                (runtime_unit, norm_runtime_unit, "norm_runtime"),
+                (iter_unit, norm_iter_unit, "norm_iteration"),
+            ]:
+                grouped_results = processor.process_performance_records(
+                    raw_benchmark_data=grouped_benchmark_data,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=None,
+                    n_bootstraps=n_bootstraps,
+                )
+                grouped_results["rank_lower"] = grouped_results["rank_lower"].fillna(
+                    grouped_results["rank"]
+                )
+                grouped_results = create_default_plotting_identifier(
+                    df=grouped_results,
+                    tuner_col=tuner_col,
+                    estimator_architecture_col=estimator_architecture_col,
+                    sampler_col=sampler_col,
+                )
+                plot_and_save(
+                    data=grouped_results,
+                    x_col=norm_unit,
+                    y_cols=["rank"],
+                    entity_col="plotting_identifier",
+                    col_measure=bench_col,
+                    row_measure=None,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"grouped_rank_vs_{filename_suffix}",
+                    analysis_type=analysis_type,
+                    subfolder="rank_analysis",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+
         significance_results_for_cd = compute_significance_results(
             benchmark_data=dataset_relative_runtime_results,
             norm_unit=norm_runtime_unit,
@@ -928,10 +1019,6 @@ def analyze_main_benchmark(
                 )
 
     if "quantile_count_comparison" in analysis_components:
-        if len(benchmark_data[sampler_col].unique()) > 1:
-            raise ValueError(
-                "Quantile count comparison analysis requires only one sampler."
-            )
         for benchmark in benchmark_data[bench_col].unique():
             bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
             for budget_unit in [runtime_unit, iter_unit]:
@@ -953,8 +1040,8 @@ def analyze_main_benchmark(
                     x_col=f"normalized_{budget_unit}",
                     y_cols=["rank"],
                     entity_col="plotting_identifier",
-                    col_measure=estimator_architecture_col,
-                    row_measure=bench_col,
+                    col_measure=sampler_col,
+                    row_measure=estimator_architecture_col,
                     cache_path=cache_path,
                     run_start_str=run_start_str,
                     filename_prefix=f"perf_vs_{budget_unit}_quantile_count_variation__{benchmark}",

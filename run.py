@@ -37,19 +37,19 @@ experiment_params = ExperimentParameters()
 
 # Granular run section control
 run_sections = {
-    # "run_lowerbound_ablations": True,
+    # "run_lowerbound_ablations": False,
     # "run_coverage_analysis": True,
-    "run_architecture_variation_analysis": True,
-    # "run_skew_and_heteroscedastic_external_tuning_analysis": True,
-    # "run_external_tuning_analysis": True,
-    # "run_preconformal_comparison_analysis": True,
-    # "run_categorical_external_tuning_analysis": True,
-    # "run_quantile_count_comparison": True,
-    # # "run_search_tuning_effect_comparison": False,
-    # "run_joint_run_analysis": True,
-    # # "run_num_candidates_comparison": False,
-    # "run_joint_candidates_extreme_quantile_analysis": True,
-    # "run_ei_architecture_analysis": True,
+    # "run_architecture_variation_analysis": False,
+    "run_skew_and_heteroscedastic_external_tuning_analysis": True,
+    "run_external_tuning_analysis": True,
+    "run_preconformal_comparison_analysis": True,
+    "run_categorical_external_tuning_analysis": True,
+    "run_quantile_count_comparison": True,
+    # "run_search_tuning_effect_comparison": False,
+    "run_joint_run_analysis": True,
+    # "run_num_candidates_comparison": False,
+    "run_joint_candidates_extreme_quantile_analysis": True,
+    "run_ei_architecture_analysis": True,
 }
 
 

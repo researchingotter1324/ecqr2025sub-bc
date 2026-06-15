@@ -12,6 +12,7 @@ from sklearn.metrics import mean_pinball_loss
 try:
     from ccqr_optimization.selection.conformalization import QuantileConformalEstimator
     from ccqr_optimization.utils.configurations.encoding import ConfigurationEncoder
+    from ccqr_optimization.selection.sampling.utils import initialize_quantile_alphas
 except ImportError:
     raise ImportError(
         "ccqr_optimization is a core dependency of this repository, but it is not automatically installed via pyproject.toml, please refer to the README.md for instructions on how to install this separately"
@@ -626,7 +627,7 @@ def run_and_analyze_joint_benchmark(
         estimator_architectures=static_architectures,
         n_repetitions_per_estimator=experiment_params.large_n_repetitions_per_tuner_config,
         tuning_iterations_range=experiment_params.static_tuning_iterations,
-        alpha=0.4,
+        n_quantiles=experiment_params.static_n_quantiles,
         n_pre_conformal_trials=min(experiment_params.static_tuning_iterations) - 1 if min(experiment_params.static_tuning_iterations) > 0 else 0,
         max_n_instances=experiment_params.default_max_n_instances,
         base_random_state=base_random_state,
@@ -781,7 +782,7 @@ def run_static_benchmark(
     estimator_architectures: list[str],
     n_repetitions_per_estimator: int,
     tuning_iterations_range: list[int],
-    alpha: float,
+    n_quantiles: int,
     n_pre_conformal_trials: int,
     max_n_instances: int,
     base_random_state: Optional[int] = None,
@@ -802,6 +803,12 @@ def run_static_benchmark(
     3. Train quantile estimators with optional hyperparameter tuning
     4. Generate holdout test configurations for unbiased evaluation
     5. Evaluate holdout prediction interval quality using pinball loss metrics
+
+    Alpha values are derived from ``n_quantiles`` using the same
+    ``initialize_quantile_alphas`` logic used by the CCQR samplers, so the spread
+    of quantile levels evaluated here mirrors the HPO benchmark. The mean pinball
+    loss is then averaged across all quantile pairs, giving a holistic picture of
+    distributional prediction quality rather than focusing on a single pair of tails.
 
     Args:
         benchmarks: List of benchmark names to evaluate. Supported benchmarks are:
@@ -824,12 +831,11 @@ def run_static_benchmark(
         tuning_iterations_range: List of hyperparameter tuning iteration counts to
             evaluate the effect of estimator tuning on prediction quality. Include 0
             for no tuning and positive values for tuned estimators.
-        calibration_split: Fraction of training data reserved for conformal calibration.
-            Typically 0.2-0.3. Higher values improve conformal coverage but reduce
-            model training data.
-        alpha: Miscoverage rate for conformal prediction intervals (e.g., 0.1 for 90%
-            coverage). The estimators are evaluated on their ability to achieve this
-            target coverage level.
+        n_quantiles: Number of quantiles (must be even) used for the static benchmark.
+            Alpha values are derived via ``initialize_quantile_alphas(n_quantiles)``,
+            mirroring the logic used by CCQR samplers. The mean pinball loss is then
+            averaged across all resulting quantile pairs so that the evaluation covers
+            the full predicted distribution rather than a single pair of tails.
         n_pre_conformal_trials: Minimum number of observations required before enabling
             conformal prediction. Below this threshold, the estimator returns uninformative
             wide intervals as a safety mechanism.
@@ -845,10 +851,12 @@ def run_static_benchmark(
         - 'repetition': Experimental repetition number for statistical analysis
         - 'tuning_iterations': Number of hyperparameter tuning iterations applied
         - 'data_size': Training dataset size used for this evaluation
-        - 'alpha': Miscoverage rate target (nominal coverage = 1 - alpha)
-        - 'mean_pinball_loss': Average pinball loss across upper and lower quantiles,
-          measuring prediction interval quality (lower is better)
+        - 'n_quantiles': Number of quantiles used to derive the alpha spread
+        - 'mean_pinball_loss': Mean pinball loss averaged across all quantile pairs,
+          measuring full-distribution prediction quality (lower is better)
     """
+    alphas = initialize_quantile_alphas(n_quantiles)
+
     estimator_error_results = []
 
     # Process each benchmark
@@ -1023,7 +1031,7 @@ def run_static_benchmark(
 
                             searcher = QuantileConformalEstimator(
                                 quantile_estimator_architecture=estimator_architecture,
-                                alphas=[alpha],
+                                alphas=alphas,
                                 n_pre_conformal_trials=n_pre_conformal_trials,
                                 calibration_split_strategy="train_test_split",
                                 normalize_features=True,
@@ -1037,25 +1045,25 @@ def run_static_benchmark(
                                 random_state=base_random_state + repetition,
                             )
 
-                            # Evaluate on holdout configurations:
+                            # Evaluate on holdout configurations across all quantile pairs:
                             holdout_predicted_intervals = searcher.predict_intervals(
                                 X=X_holdout_encoded,
-                            )[
-                                0
-                            ]  # [0] because we only have one alpha
-
-                            lower_quantile = alpha / 2
-                            upper_quantile = 1 - lower_quantile
-                            lo_y_pred = holdout_predicted_intervals.lower_bounds
-                            hi_y_pred = holdout_predicted_intervals.upper_bounds
-
-                            lo_score = mean_pinball_loss(
-                                y_holdout, lo_y_pred, alpha=lower_quantile
                             )
-                            hi_score = mean_pinball_loss(
-                                y_holdout, hi_y_pred, alpha=upper_quantile
-                            )
-                            mean_loss = (lo_score + hi_score) / 2
+
+                            pair_losses = []
+                            for interval_idx, alpha_val in enumerate(alphas):
+                                lower_quantile = alpha_val / 2
+                                upper_quantile = 1 - lower_quantile
+                                lo_y_pred = holdout_predicted_intervals[interval_idx].lower_bounds
+                                hi_y_pred = holdout_predicted_intervals[interval_idx].upper_bounds
+                                lo_score = mean_pinball_loss(
+                                    y_holdout, lo_y_pred, alpha=lower_quantile
+                                )
+                                hi_score = mean_pinball_loss(
+                                    y_holdout, hi_y_pred, alpha=upper_quantile
+                                )
+                                pair_losses.append((lo_score + hi_score) / 2)
+                            mean_loss = float(np.mean(pair_losses))
 
                             aliased_estimator_architecture = (
                                 aliases.architecture_aliases[estimator_architecture]
@@ -1079,7 +1087,7 @@ def run_static_benchmark(
                                 "repetition": repetition,
                                 "tuning_iterations": tuning_iterations,
                                 "data_size": data_size,
-                                "alpha": alpha,
+                                "n_quantiles": n_quantiles,
                                 "mean_pinball_loss": mean_loss,
                             }
                             estimator_error_results.append(results)

@@ -25,6 +25,9 @@ from hpobench.config.config_types import (
     CCQRModel,
 )
 
+TS_N_QUANTILES = 6
+EI_N_QUANTILES = 10
+
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
 
 STATIC_ARCHITECTURES = ["qgbm", "qleaf", "qknn", "ql", "qens3", "qens1"]
@@ -112,33 +115,28 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
 
 
 ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
-ARCHITECTURE_VARIATION_N_QUANTILES = 6
 ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
             "qgbm",
-            # "qleaf",
-            # "qknn",
+            "qleaf",
+            "qknn",
             "ql",
+            "qens3",
             "qens1",
+            "sqr",
     ],
     samplers=[
         
         ThompsonSampler(
-            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
+            n_quantiles=TS_N_QUANTILES,
             enable_optimistic_sampling=False,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
         ),
         ExpectedImprovementSampler(
-            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
+            n_quantiles=EI_N_QUANTILES,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
             target_type="incumbent",
             local_search= SmacLocalSearch(),
-        ),
-        ExpectedImprovementSampler(
-            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
-            adapter=ARCHITECTURE_VARIATION_ADAPTER,
-            target_type="incumbent",
-            local_search= None,
         ),
     ],
     calibration_split_strategy="train_test_split",
@@ -176,40 +174,25 @@ LOWERBOUND_ABLATION_CONFIGURATIONS = build_architecture_variation_configurations
 
 
 LIMITED_ARCHITECTURE_ADAPTER = "DtACI"
-LIMITED_ARCHITECTURE_N_QUANTILES = 6
 LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
-            # "qgbm",
-            # "qleaf",
-            # "qknn",
-            # "sqr",
-            "ql",
-            # "qens1",
-            # "qens5",
-            # "qens1",
-            # "qrf",
+            "qens3"
         ],
         samplers=[
         ThompsonSampler(
-            n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+            n_quantiles=TS_N_QUANTILES,
             enable_optimistic_sampling=False,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
         ),
-        # PessimisticLowerBoundSampler(interval_width=0.8, adapter=LIMITED_ARCHITECTURE_ADAPTER, local_search=SmacLocalSearch()),
-        # PessimisticLowerBoundSampler(interval_width=0.8, adapter=LIMITED_ARCHITECTURE_ADAPTER, local_search=None),
             ExpectedImprovementSampler(
-                n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+                n_quantiles=EI_N_QUANTILES,
                 adapter=LIMITED_ARCHITECTURE_ADAPTER,
                 target_type="incumbent",
                 local_search=SmacLocalSearch(
-        # n_acq_starts=30,
-        # n_historical_starts=18,
-        # n_steps_plateau_walk=30,
-        # num_continuous_neighbors=24
     ), ),
     ExpectedImprovementSampler(
-            n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+            n_quantiles=EI_N_QUANTILES,
             adapter=LIMITED_ARCHITECTURE_ADAPTER,
             target_type="incumbent",
             local_search=None,
@@ -223,13 +206,11 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
 
 
 PRECONFORMAL_ADAPTER = "DtACI"
-PRECONFORMAL_N_QUANTILES = 10
 PRECONFORMAL_COMPARISON_CONFIGURATIONS = []
 for architecture in [
-    # "qknn",
     "ql",
-    "qens1",
     "qgbm",
+    "qens3",
 ]:
     # Simulate normal pre-conformal cutoff vs. unreachable one:
     for pre_conformal_trials in [32, 10000]:
@@ -242,12 +223,12 @@ for architecture in [
                 architectures=[architecture],
                 samplers=[
         ThompsonSampler(
-            n_quantiles=PRECONFORMAL_N_QUANTILES,
+            n_quantiles=TS_N_QUANTILES,
             enable_optimistic_sampling=False,
             adapter=PRECONFORMAL_ADAPTER,
         ),
         ExpectedImprovementSampler(
-            n_quantiles=PRECONFORMAL_N_QUANTILES,
+            n_quantiles=EI_N_QUANTILES,
             adapter=PRECONFORMAL_ADAPTER,
             target_type="incumbent",
             local_search=SmacLocalSearch(),
@@ -267,11 +248,7 @@ for n_quantiles in QUANTILE_COUNT_VALUES:
     QUANTILE_COUNT_VARIATION_CONFIGURATIONS.extend(
         build_architecture_variation_configurations(
             architectures=[
-                "qgbm",
-                # "qleaf",
-                # "qknn",
-                # "ql",
-                # "qens1",
+                "qens3",
             ],
             samplers=[
                 ThompsonSampler(
@@ -319,7 +296,6 @@ for searcher_tuning_framework in [None, "fixed"]:
 
 
 NUM_CANDIDATES_VARIATION_ADAPTER = "DtACI"
-NUM_CANDIDATES_VARIATION_N_QUANTILES = 6
 NUM_CANDIDATES_VARIATION_CONFIGURATIONS = []
 NUM_CANDIDATES_VALUES = [500, 3000, 10000, 50000]
 
@@ -328,15 +304,12 @@ for n_candidates in NUM_CANDIDATES_VALUES:
         build_architecture_variation_configurations(
             architectures=[
                 "qgbm",
-                # "qleaf",
-                # "qknn",
                 "ql",
-                # "qens3",
-                "qens1",
+                "qens3",
             ],
             samplers=[
                 ThompsonSampler(
-                    n_quantiles=NUM_CANDIDATES_VARIATION_N_QUANTILES,
+                    n_quantiles=TS_N_QUANTILES,
                     enable_optimistic_sampling=False,
                     adapter=NUM_CANDIDATES_VARIATION_ADAPTER,
                 ),
@@ -349,7 +322,6 @@ for n_candidates in NUM_CANDIDATES_VALUES:
     )
 
 NUM_CANDIDATES_JOINT_ADAPTER = "DtACI"
-NUM_CANDIDATES_JOINT_N_QUANTILES = 6
 NUM_CANDIDATES_JOINT_ARCHITECTURE = "qgbm"
 NUM_CANDIDATES_JOINT_CONFIGURATIONS = []
 
@@ -359,7 +331,7 @@ for n_candidates in NUM_CANDIDATES_VALUES:
             architectures=[NUM_CANDIDATES_JOINT_ARCHITECTURE],
             samplers=[
                 ThompsonSampler(
-                    n_quantiles=NUM_CANDIDATES_JOINT_N_QUANTILES,
+                    n_quantiles=TS_N_QUANTILES,
                     enable_optimistic_sampling=False,
                     adapter=NUM_CANDIDATES_JOINT_ADAPTER,
                 ),
@@ -372,22 +344,18 @@ for n_candidates in NUM_CANDIDATES_VALUES:
     )
 
 EI_ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
-EI_ARCHITECTURE_VARIATION_N_QUANTILES = 10
 EI_ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
-        # "sqr",
-        "ql",
-        # "qknn",
-        "qgbm",
-        # "qens3",
-        # "qens1",
+                "qgbm",
+                "ql",
+                "qens3",
     ],
     samplers=[
         ExpectedImprovementSampler(
-            n_quantiles=EI_ARCHITECTURE_VARIATION_N_QUANTILES,
+            n_quantiles=EI_N_QUANTILES,
             adapter=EI_ARCHITECTURE_VARIATION_ADAPTER,
             target_type="incumbent",
-            local_search= None #SmacLocalSearch(),
+            local_search= SmacLocalSearch(),
         ),
     ],
     n_pre_conformal_trials=32,

@@ -16,13 +16,17 @@ class ExperimentParameters(BaseModel):
             acquisition function maximization.
         static_data_sizes: Data sizes for static analysis experiments.
         static_tuning_iterations: Tuning iterations for static analysis.
+        static_n_quantiles: Number of quantiles (must be even) used for the static
+            benchmark. Alpha values are derived from this count using the same
+            ``initialize_quantile_alphas`` logic as the CCQR samplers, so the
+            spread of quantile levels evaluated here mirrors the HPO benchmark.
         small_n_repetitions_per_tuner_config: Repetitions for small experiments.
         medium_n_repetitions_per_tuner_config: Repetitions for medium experiments.
         large_n_repetitions_per_tuner_config: Repetitions for large experiments.
     """
 
-    n_trials: Optional[int] = 70
-    n_coverage_trials: int = 70
+    n_trials: Optional[int] = 50
+    n_coverage_trials: int = 50
 
     timeout: Optional[int] = None
     n_warm_starts: int = 15
@@ -32,8 +36,9 @@ class ExperimentParameters(BaseModel):
 
     static_data_sizes: List[int] = [25, 50, 100, 200, 400]
     static_tuning_iterations: List[int] = [0]
+    static_n_quantiles: int = 10
 
-    medium_n_repetitions_per_tuner_config: int = 5
+    medium_n_repetitions_per_tuner_config: int = 3
     large_n_repetitions_per_tuner_config: int = medium_n_repetitions_per_tuner_config 
 
 
