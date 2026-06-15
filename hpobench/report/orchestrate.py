@@ -33,13 +33,14 @@ from hpobench.prepare import (
 )
 from hpobench.config.schema import BenchmarkDataSchema
 from hpobench.config.constants import Aliases, ExperimentParameters
-from hpobench.config.utils import _fmt_float
+from hpobench.config.utils import fmt_float
 
 from hpobench.tune import tune
 from hpobench.report.analyze import (
     analyze_main_benchmark,
     analyze_joint_architecture_and_static,
     analyze_joint_candidates_and_extreme_quantile,
+    analyze_ei_architecture,
 )
 
 logger = logging.getLogger(__name__)
@@ -177,7 +178,7 @@ def load_experiment_configs(
     return experiment_configs
 
 
-def _process_single_experiment_config(
+def process_single_experiment_config(
     experiment_config: ExperimentConfig,
     n_repetitions: int,
     base_random_state: int,
@@ -260,7 +261,7 @@ def _process_single_experiment_config(
                 use_local_search_ccqr = getattr(sampler, "local_search", None) is not None
 
                 if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
-                    confidence_level = _fmt_float(sampler.interval_width)
+                    confidence_level = fmt_float(sampler.interval_width)
                 else:
                     confidence_level = ""
 
@@ -326,9 +327,9 @@ def _process_single_experiment_config(
                     # (iw, c, beta_decay) combination gets its own plotting group.
                     parts = []
                     if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
-                        parts.append(f"iw{_fmt_float(sampler.interval_width)}")
+                        parts.append(f"iw{fmt_float(sampler.interval_width)}")
                     if hasattr(sampler, "c") and sampler.c is not None:
-                        parts.append(f"c{_fmt_float(sampler.c)}")
+                        parts.append(f"c{fmt_float(sampler.c)}")
                     if hasattr(sampler, "beta_decay") and sampler.beta_decay:
                         decay_parts = sampler.beta_decay.split("_")
                         parts.append("".join(p[0] for p in decay_parts))
@@ -387,7 +388,7 @@ def run_main_benchmark(
         with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(
-                    _process_single_experiment_config,
+                    process_single_experiment_config,
                     experiment_config=config,
                     n_repetitions=n_repetitions,
                     base_random_state=base_random_state
@@ -406,7 +407,7 @@ def run_main_benchmark(
     else:
         logger.info("Running sequentially.")
         for experiment_config in experiment_configs:
-            dataset_df = _process_single_experiment_config(
+            dataset_df = process_single_experiment_config(
                 experiment_config=experiment_config,
                 n_repetitions=n_repetitions,
                 base_random_state=base_random_state
@@ -695,6 +696,67 @@ def run_and_analyze_joint_candidates_extreme_quantile_benchmark(
     )
 
     analyze_joint_candidates_and_extreme_quantile(
+        raw_benchmark_data=raw_benchmark_data,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        analysis_type=analysis_type,
+        schema=schema,
+    )
+
+
+def run_and_analyze_ei_architecture_benchmark(
+    benchmarks: list[
+        Literal[
+            "jahs201",
+            "lcbench",
+            "rbv2_aknn",
+            "LCBench-L",
+            "LCBench-H",
+            "LCBench-A",
+            "rbv2_aknn-L",
+            "rbv2_aknn-H",
+            "rbv2_aknn-A",
+        ]
+    ],
+    tuning_configurations: list[TunerConfig],
+    n_warm_starts: int,
+    n_trials: int,
+    timeout: Optional[float],
+    base_random_state: int,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
+    schema: BenchmarkDataSchema,
+    max_n_instances_per_benchmark: int = 10,
+    n_repetitions: int = 10,
+    datasets_per_benchmark: Optional[list[list[str]]] = None,
+    parallelize: bool = False,
+) -> None:
+    """Run benchmark with EI-based configurations and produce the EI architecture tri-plot.
+
+    The tuning configurations must share exactly one EI sampler across multiple
+    estimator architectures; this is enforced downstream in the analysis step.
+    """
+    experiment_configs = load_experiment_configs(
+        benchmarks=benchmarks,
+        tuning_configurations=tuning_configurations,
+        n_warm_starts=n_warm_starts,
+        n_trials=n_trials,
+        timeout=timeout,
+        max_n_instances_per_benchmark=max_n_instances_per_benchmark,
+        datasets_per_benchmark=datasets_per_benchmark,
+    )
+
+    raw_benchmark_data = run_main_benchmark(
+        experiment_configs=experiment_configs,
+        n_repetitions=n_repetitions,
+        base_random_state=base_random_state,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        parallelize=parallelize,
+    )
+
+    analyze_ei_architecture(
         raw_benchmark_data=raw_benchmark_data,
         cache_path=cache_path,
         run_start_str=run_start_str,

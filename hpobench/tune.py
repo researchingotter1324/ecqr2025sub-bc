@@ -170,6 +170,8 @@ def build_history_entry(
     tabularized_configuration: Optional[Any] = None,
     acquisition_source: Optional[str] = None,
     extreme_quantile_used: Optional[int] = None,
+    ei_collapsed: Optional[int] = None,
+    perc_zero_ei: Optional[float] = None,
 ) -> dict[str, Any]:
     """Creates a standardized dictionary entry for tuning history records.
 
@@ -189,6 +191,12 @@ def build_history_entry(
         extreme_quantile_used: Binary indicator (0/1) of whether the selected
             configuration was acquired via the lowest (extreme) quantile bound.
             Only applicable to ccqr_optimization tuners.
+        ei_collapsed: Binary indicator (0/1) of whether the EI acquisition was
+            collapsed (hard-maximization) rather than soft for this trial.
+            Only applicable to EI-based ccqr_optimization tuners.
+        perc_zero_ei: Percentage of candidate configurations that had a zero EI
+            value during this trial's acquisition step.
+            Only applicable to EI-based ccqr_optimization tuners.
 
     Returns:
         Dictionary containing all trial information with standardized keys.
@@ -207,6 +215,8 @@ def build_history_entry(
         "tabularized_configuration": tabularized_configuration,
         "acquisition_source": acquisition_source,
         "extreme_quantile_used": extreme_quantile_used,
+        "ei_collapsed": ei_collapsed,
+        "perc_zero_ei": perc_zero_ei,
     }
 
 
@@ -552,13 +562,21 @@ def ccqr_optimization_tune(
             width = None
             miscoverage_penalty = None
 
-        # Binary indicator of whether this trial's configuration was acquired via
-        # the lowest (extreme) quantile bound. Only present on ccqr study trials.
         extreme_quantile_used_raw = getattr(trial, "extreme_quantile_used", None)
         extreme_quantile_used = (
             int(extreme_quantile_used_raw)
             if extreme_quantile_used_raw is not None
             else None
+        )
+
+        ei_collapsed_raw = getattr(trial, "ei_collapsed", None)
+        ei_collapsed = (
+            int(ei_collapsed_raw) if ei_collapsed_raw is not None else None
+        )
+
+        perc_zero_ei_raw = getattr(trial, "perc_zero_ei", None)
+        perc_zero_ei = (
+            float(perc_zero_ei_raw) if perc_zero_ei_raw is not None else None
         )
 
         history.append(
@@ -574,6 +592,8 @@ def ccqr_optimization_tune(
                 miscoverage_penalty=miscoverage_penalty,
                 tabularized_configuration=trial.tabularized_configuration,
                 extreme_quantile_used=extreme_quantile_used,
+                ei_collapsed=ei_collapsed,
+                perc_zero_ei=perc_zero_ei,
             )
         )
     return pd.DataFrame(history)

@@ -27,6 +27,10 @@ class BenchmarkDataSchema(BaseModel):
         breach_col: Column for coverage breach status.
         extreme_quantile_used_col: Column for binary indicator of whether a trial's
             performance was obtained via the lowest (extreme) quantile bound.
+        ei_collapsed_col: Column for binary indicator (0/1) of whether the EI
+            acquisition was collapsed (hard-maximization) rather than soft for a trial.
+        perc_zero_ei_col: Column for the percentage of candidate configurations
+            that had a zero EI value during a trial's acquisition step.
         runtime_unit: Base name for runtime columns.
         iter_unit: Base name for iteration columns.
         norm_runtime_unit: Name for normalized runtime columns.
@@ -54,6 +58,8 @@ class BenchmarkDataSchema(BaseModel):
     estimator_error_col: str = "mean_pinball_loss"
     breach_col: str = "breach_status"
     extreme_quantile_used_col: str = "extreme_quantile_used"
+    ei_collapsed_col: str = "ei_collapsed"
+    perc_zero_ei_col: str = "perc_zero_ei"
 
     runtime_unit: str = "runtime"
     iter_unit: str = "iteration"

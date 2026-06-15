@@ -116,11 +116,9 @@ ARCHITECTURE_VARIATION_N_QUANTILES = 6
 ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
             "qgbm",
-            "qleaf",
-            "qknn",
+            # "qleaf",
+            # "qknn",
             "ql",
-            # "qens3",
-            # "qens5",
             "qens1",
     ],
     samplers=[
@@ -129,7 +127,19 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
             enable_optimistic_sampling=False,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
-        )
+        ),
+        ExpectedImprovementSampler(
+            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
+            adapter=ARCHITECTURE_VARIATION_ADAPTER,
+            target_type="incumbent",
+            local_search= SmacLocalSearch(),
+        ),
+        ExpectedImprovementSampler(
+            n_quantiles=ARCHITECTURE_VARIATION_N_QUANTILES,
+            adapter=ARCHITECTURE_VARIATION_ADAPTER,
+            target_type="incumbent",
+            local_search= None,
+        ),
     ],
     calibration_split_strategy="train_test_split",
 )
@@ -170,10 +180,11 @@ LIMITED_ARCHITECTURE_N_QUANTILES = 6
 LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
     build_architecture_variation_configurations(
         architectures=[
-            "qgbm",
+            # "qgbm",
             # "qleaf",
             # "qknn",
-            # "ql",
+            # "sqr",
+            "ql",
             # "qens1",
             # "qens5",
             # "qens1",
@@ -185,19 +196,24 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
             enable_optimistic_sampling=False,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
         ),
-        PessimisticLowerBoundSampler(interval_width=0.8, adapter=LIMITED_ARCHITECTURE_ADAPTER, local_search=SmacLocalSearch()),
-        PessimisticLowerBoundSampler(interval_width=0.8, adapter=LIMITED_ARCHITECTURE_ADAPTER, local_search=None),
-    #         ExpectedImprovementSampler(
-    #             n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
-    #             adapter=LIMITED_ARCHITECTURE_ADAPTER,
-    #             ei_mode="soft_quantile_point",
-    #             local_search=SmacLocalSearch(
-    #     # n_acq_starts=30,
-    #     # n_historical_starts=18,
-    #     # n_steps_plateau_walk=30,
-    #     # num_continuous_neighbors=24
-    # ),
-    #         ),
+        # PessimisticLowerBoundSampler(interval_width=0.8, adapter=LIMITED_ARCHITECTURE_ADAPTER, local_search=SmacLocalSearch()),
+        # PessimisticLowerBoundSampler(interval_width=0.8, adapter=LIMITED_ARCHITECTURE_ADAPTER, local_search=None),
+            ExpectedImprovementSampler(
+                n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+                adapter=LIMITED_ARCHITECTURE_ADAPTER,
+                target_type="incumbent",
+                local_search=SmacLocalSearch(
+        # n_acq_starts=30,
+        # n_historical_starts=18,
+        # n_steps_plateau_walk=30,
+        # num_continuous_neighbors=24
+    ), ),
+    ExpectedImprovementSampler(
+            n_quantiles=LIMITED_ARCHITECTURE_N_QUANTILES,
+            adapter=LIMITED_ARCHITECTURE_ADAPTER,
+            target_type="incumbent",
+            local_search=None,
+            ),
         ],
         n_pre_conformal_trials=32,
         searcher_tuning_framework=None,
@@ -211,8 +227,8 @@ PRECONFORMAL_N_QUANTILES = 10
 PRECONFORMAL_COMPARISON_CONFIGURATIONS = []
 for architecture in [
     # "qknn",
-    # "ql",
-    # "qens1",
+    "ql",
+    "qens1",
     "qgbm",
 ]:
     # Simulate normal pre-conformal cutoff vs. unreachable one:
@@ -229,7 +245,13 @@ for architecture in [
             n_quantiles=PRECONFORMAL_N_QUANTILES,
             enable_optimistic_sampling=False,
             adapter=PRECONFORMAL_ADAPTER,
-        )
+        ),
+        ExpectedImprovementSampler(
+            n_quantiles=PRECONFORMAL_N_QUANTILES,
+            adapter=PRECONFORMAL_ADAPTER,
+            target_type="incumbent",
+            local_search=SmacLocalSearch(),
+        ),
                 ],
                 n_pre_conformal_trials=pre_conformal_trials,
                 calibration_split_strategy="adaptive",
@@ -257,7 +279,12 @@ for n_quantiles in QUANTILE_COUNT_VALUES:
                     enable_optimistic_sampling=False,
                     adapter=QUANTILE_COUNT_VARIATION_ADAPTER,
                 ),
-
+                ExpectedImprovementSampler(
+                    n_quantiles=n_quantiles,
+                    adapter=QUANTILE_COUNT_VARIATION_ADAPTER,
+                    target_type="incumbent",
+                    local_search=SmacLocalSearch(),
+                ),
             ],
             n_pre_conformal_trials=32,
             searcher_tuning_framework=None,
@@ -343,3 +370,27 @@ for n_candidates in NUM_CANDIDATES_VALUES:
             n_candidates=n_candidates,
         )
     )
+
+EI_ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
+EI_ARCHITECTURE_VARIATION_N_QUANTILES = 10
+EI_ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
+    architectures=[
+        # "sqr",
+        "ql",
+        # "qknn",
+        "qgbm",
+        # "qens3",
+        # "qens1",
+    ],
+    samplers=[
+        ExpectedImprovementSampler(
+            n_quantiles=EI_ARCHITECTURE_VARIATION_N_QUANTILES,
+            adapter=EI_ARCHITECTURE_VARIATION_ADAPTER,
+            target_type="incumbent",
+            local_search= None #SmacLocalSearch(),
+        ),
+    ],
+    n_pre_conformal_trials=32,
+    searcher_tuning_framework=None,
+    calibration_split_strategy="train_test_split",
+)

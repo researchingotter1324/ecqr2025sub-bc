@@ -129,20 +129,18 @@ def nemenyi_pairwise_test(
         data.groupby(breakout_col) if breakout_col is not None else [(None, data)]
     )
 
-    for within_group, group_df in group_iter:
-        if group_df[entity_col].nunique() < 2:
+    for within_group, group_df_view in group_iter:
+        if group_df_view[entity_col].nunique() < 2:
             raise ValueError(
-                f"Nemenyi test requires at least 2 entities; group {within_group} has {group_df[entity_col].nunique()}"
+                f"Nemenyi test requires at least 2 entities; group {within_group} has {group_df_view[entity_col].nunique()}"
             )
 
-        if group_df[across_col].nunique() < 2:
+        if group_df_view[across_col].nunique() < 2:
             raise ValueError(
-                f"Nemenyi test requires at least 2 blocks/datasets; group {within_group} has {group_df[across_col].nunique()}"
+                f"Nemenyi test requires at least 2 blocks/datasets; group {within_group} has {group_df_view[across_col].nunique()}"
             )
 
-        # Create a unique block identifier to handle duplicated entries in block_col
-        # The block_id should map each unique block (across_col value) to a unique integer
-        group_df = group_df.copy()
+        group_df = group_df_view.copy()
         unique_blocks = group_df[across_col].unique()
         block_to_id = {block: i for i, block in enumerate(unique_blocks)}
         group_df["_block_id"] = group_df[across_col].map(block_to_id)

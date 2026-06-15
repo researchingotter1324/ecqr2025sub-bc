@@ -16,7 +16,7 @@ class BenchmarkDataProcessor:
     methods for each processing step without passing column lists around.
     """
 
-    def __init__(self, schema: BenchmarkDataSchema = None):
+    def __init__(self, schema: Optional[BenchmarkDataSchema] = None) -> None:
         """Initialize the benchmark data processor with column schema configuration.
 
         Args:
@@ -27,7 +27,6 @@ class BenchmarkDataProcessor:
             schema = BenchmarkDataSchema()
         self.schema = schema
 
-        # Extract all column names from schema
         self.rep_col = schema.rep_col
         self.perf_col = schema.perf_col
         self.tuner_col = schema.tuner_col
@@ -48,6 +47,9 @@ class BenchmarkDataProcessor:
         self.breach_column = schema.breach_col
         self.extreme_quantile_used_col = schema.extreme_quantile_used_col
         self.cumulative_extreme_quantile_rate_col = "cumulative_extreme_quantile_rate"
+        self.ei_collapsed_col = schema.ei_collapsed_col
+        self.perc_zero_ei_col = schema.perc_zero_ei_col
+        self.cumulative_ei_collapsed_rate_col = "cumulative_ei_collapsed_rate"
         self.cumulative_coverage_error_col = schema.cumulative_coverage_error_col
         self.rolling_coverage_error_col = schema.rolling_coverage_error_col
 
@@ -86,9 +88,11 @@ class BenchmarkDataProcessor:
             self.iter_unit,
             self.breach_column,
             self.extreme_quantile_used_col,
+            self.ei_collapsed_col,
+            self.perc_zero_ei_col,
         ]
 
-    def _validate_and_clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
+    def validate_and_clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Validate and clean benchmark data by handling missing values.
 
         Args:
@@ -106,7 +110,6 @@ class BenchmarkDataProcessor:
             if col not in data_copy.columns:
                 raise ValueError(f"Missing column in input data: {col}")
 
-        # Only fill NaN values in tuner columns with empty strings
         data_copy[self.tuner_cols] = data_copy[self.tuner_cols].fillna("")
 
         return data_copy
@@ -139,7 +142,6 @@ class BenchmarkDataProcessor:
         """
         data_cleaned = data.copy()
 
-        # Calculate budget ranges per experiment run
         data_cleaned["max_budget_per_run"] = data_cleaned.groupby(
             self.repetition_level
         )[budget_unit].transform("max")
@@ -148,7 +150,6 @@ class BenchmarkDataProcessor:
             self.repetition_level
         )[budget_unit].transform("min")
 
-        # Find shared budget range per dataset
         data_cleaned["max_shared_budget_per_dataset"] = data_cleaned.groupby(
             self.dataset_level
         )["max_budget_per_run"].transform("min")
@@ -157,7 +158,6 @@ class BenchmarkDataProcessor:
             self.dataset_level
         )["min_budget_per_run"].transform("max")
 
-        # Filter to shared budget range
         aligned_data = data_cleaned[
             (data_cleaned[budget_unit] >= data_cleaned["min_shared_budget_per_dataset"])
             & (
@@ -166,7 +166,6 @@ class BenchmarkDataProcessor:
             )
         ].copy()
 
-        # Clean up temporary columns
         aligned_data = aligned_data.drop(
             columns=[
                 "max_budget_per_run",
@@ -214,7 +213,6 @@ class BenchmarkDataProcessor:
         data_cleaned[self.breach_column] = data_cleaned[self.breach_column].replace(
             {"": np.nan, None: np.nan}
         )
-        # Convert to numeric, coercing errors to NaN
         data_cleaned[self.breach_column] = pd.to_numeric(
             data_cleaned[self.breach_column], errors="coerce"
         )
@@ -238,12 +236,10 @@ class BenchmarkDataProcessor:
             .reset_index(level=self.repetition_level, drop=True)
         )
 
-        # Always create coverage error columns, fill with NaN if not available
         confidence_vals = sorted_data[self.confidence_level_col]
         has_valid_confidence = (~confidence_vals.isin([None, ""])).all()
 
         if has_valid_confidence:
-            logger.debug("Creating coverage error columns with calculated values")
             sorted_data[self.cumulative_coverage_error_col] = abs(
                 (1 - sorted_data["cumulative_breach_rate"])
                 - sorted_data[self.confidence_level_col].astype(float)
@@ -253,7 +249,6 @@ class BenchmarkDataProcessor:
                 - sorted_data[self.confidence_level_col].astype(float)
             )
         else:
-            logger.debug("Creating coverage error columns with NaN values")
             sorted_data[self.cumulative_coverage_error_col] = np.nan
             sorted_data[self.rolling_coverage_error_col] = np.nan
 
@@ -294,6 +289,44 @@ class BenchmarkDataProcessor:
 
         return sorted_data
 
+    def accumulate_ei_metrics(
+        self, data: pd.DataFrame, budget_unit: str
+    ) -> pd.DataFrame:
+        """Prepares EI-specific per-trial indicators for downstream aggregation.
+
+        - ``cumulative_ei_collapsed_rate``: running mean of the binary
+          ``ei_collapsed`` indicator per repetition track.
+        - ``perc_zero_ei``: passed through as-is after numeric coercion; it is
+          already a percentage value from the study object and requires no
+          per-row cumulative accumulation before repetition-level averaging.
+
+        Both columns receive NaN for non-EI tuners or warm-start trials
+        where the source indicators are absent.
+        """
+        data_cleaned = data.copy()
+
+        for raw_col in [self.ei_collapsed_col, self.perc_zero_ei_col]:
+            data_cleaned[raw_col] = data_cleaned[raw_col].replace(
+                {"": np.nan, None: np.nan}
+            )
+            data_cleaned[raw_col] = pd.to_numeric(
+                data_cleaned[raw_col], errors="coerce"
+            )
+
+        sorted_data = data_cleaned.sort_values(
+            by=self.repetition_level + [budget_unit],
+            ascending=True,
+        ).reset_index(drop=True)
+
+        sorted_data[self.cumulative_ei_collapsed_rate_col] = (
+            sorted_data.groupby(self.repetition_level)[self.ei_collapsed_col]
+            .expanding()
+            .mean()
+            .reset_index(level=self.repetition_level, drop=True)
+        )
+
+        return sorted_data
+
     def time_discretize_data(
         self, data: pd.DataFrame, budget_unit: str = "runtime"
     ) -> pd.DataFrame:
@@ -304,7 +337,6 @@ class BenchmarkDataProcessor:
 
         discretized_slices = []
 
-        # Group by dataset level to discretize within each dataset
         for _, dataset_group in data_cleaned.groupby(self.dataset_level):
             max_runtime = dataset_group[budget_unit].max()
             rounding_increment = -(len(str(int(max_runtime))) - 3)
@@ -313,14 +345,12 @@ class BenchmarkDataProcessor:
             )
             expanded_df = pd.DataFrame({budget_unit: runtime_values}).astype(int)
 
-            # Process each individual experiment run
-            for _, run_group in dataset_group.groupby(self.repetition_level):
-                run_group = run_group.copy()
+            for _, run_group_view in dataset_group.groupby(self.repetition_level):
+                run_group = run_group_view.copy()
                 run_group[budget_unit] = (
                     run_group[budget_unit].round(rounding_increment).astype(int)
                 )
 
-                # Aggregate duplicates and accumulate performance
                 run_group = run_group.groupby(
                     self.repetition_level + [budget_unit], as_index=False
                 ).agg({self.perf_col: "min"})
@@ -328,7 +358,6 @@ class BenchmarkDataProcessor:
                 run_min_time = min(run_group[budget_unit])
                 run_group = self.accumulate_best_performances(run_group, budget_unit)
 
-                # Merge with full time grid and forward fill
                 run_group = pd.merge(expanded_df, run_group, how="left", on=budget_unit)
                 run_group = run_group.sort_values(by=budget_unit).reset_index(drop=True)
                 run_group = run_group.ffill()
@@ -347,7 +376,6 @@ class BenchmarkDataProcessor:
 
         discretized_data = pd.concat(discretized_slices, ignore_index=True)
 
-        # Calculate observation fill rate and filter
         discretized_data["observation_fill_rate"] = discretized_data.groupby(
             self.tuner_level + [budget_unit]
         )["best_performance"].transform(lambda x: (x.notna().sum()) / len(x))
@@ -366,7 +394,6 @@ class BenchmarkDataProcessor:
         """
         data_cleaned = data.copy()
 
-        # Normalize budget within each experiment run
         normalized_col = f"normalized_{budget_unit}"
         data_cleaned[normalized_col] = data_cleaned.groupby(self.repetition_level)[
             budget_unit
@@ -377,10 +404,8 @@ class BenchmarkDataProcessor:
         )
         data_cleaned[normalized_col] = data_cleaned[normalized_col].round().astype(int)
 
-        # Create standardized results
         results = []
         for _, group in data_cleaned.groupby(self.repetition_level):
-            # Create 0-100 percentage grid
             percentage_grid = pd.DataFrame({normalized_col: np.arange(0, 101)})
 
             columns_to_keep = (
@@ -390,7 +415,6 @@ class BenchmarkDataProcessor:
                 subset=[normalized_col]
             )
 
-            # Merge and forward fill
             merged_group = pd.merge(
                 percentage_grid, group_subset, how="left", on=normalized_col
             )
@@ -423,7 +447,6 @@ class BenchmarkDataProcessor:
             self.tuner_level + [budget_unit], as_index=False
         ).agg(aggregations)
 
-        # Remove '_mean' suffix from aggregated metric columns if present
         rename_dict = {
             f"{metric}_mean": metric
             for metric in metrics
@@ -446,15 +469,10 @@ class BenchmarkDataProcessor:
         """
         Process data with iteration-based budget.
         """
-        # Step 1: Accumulate best performances
         accumulated_data = self.accumulate_best_performances(data, self.iter_unit)
-
-        # Step 2: Align tuners to shared budget ranges
         aligned_data = self.align_tuners_to_shared_budget(
             accumulated_data, self.iter_unit
         )
-
-        # Step 3: Calculate ranks
         ranked_data = self.calculate_ranks(
             aligned_data,
             self.iter_unit,
@@ -464,9 +482,9 @@ class BenchmarkDataProcessor:
         )
 
         breach_data = self.accumulate_breaches(ranked_data, self.iter_unit)
-        final_data = self.accumulate_extreme_quantile_rate(breach_data, self.iter_unit)
+        extreme_q_data = self.accumulate_extreme_quantile_rate(breach_data, self.iter_unit)
+        final_data = self.accumulate_ei_metrics(extreme_q_data, self.iter_unit)
 
-        # Step 5: Relativize budget if requested
         budget_unit = self.iter_unit
         if relativize_budget:
             metrics = ["rank", "best_performance"]
@@ -477,6 +495,8 @@ class BenchmarkDataProcessor:
                 self.cumulative_coverage_error_col,
                 self.rolling_coverage_error_col,
                 self.cumulative_extreme_quantile_rate_col,
+                self.cumulative_ei_collapsed_rate_col,
+                self.perc_zero_ei_col,
             ]
         if relativize_budget:
             final_data = self.standardize_budget_to_percentage(
@@ -518,15 +538,10 @@ class BenchmarkDataProcessor:
         """
         Process data with runtime-based budget.
         """
-        # Step 1: Discretize time data
         discretized_data = self.time_discretize_data(data, self.runtime_unit)
-
-        # Step 2: Align tuners to shared budget ranges
         aligned_data = self.align_tuners_to_shared_budget(
             discretized_data, self.runtime_unit
         )
-
-        # Step 3: Calculate ranks
         final_data = self.calculate_ranks(
             aligned_data,
             self.runtime_unit,
@@ -536,7 +551,6 @@ class BenchmarkDataProcessor:
         )
 
         budget_unit = self.runtime_unit
-        # Step 4: Relativize budget if requested
         if relativize_budget:
             final_data = self.standardize_budget_to_percentage(
                 final_data, self.runtime_unit, ["rank", "best_performance"]
@@ -595,7 +609,7 @@ class BenchmarkDataProcessor:
         Raises:
             ValueError: If budget_unit is not supported.
         """
-        data_cleaned = self._validate_and_clean_data(raw_benchmark_data)
+        data_cleaned = self.validate_and_clean_data(raw_benchmark_data)
 
         if budget_unit == self.iter_unit:
             return self.process_iteration_budget_data(
@@ -617,6 +631,14 @@ class BenchmarkDataProcessor:
             )
         else:
             raise ValueError(f"Unsupported budget unit: {budget_unit}")
+
+
+def p5(x: pd.Series) -> float:
+    return float(np.percentile(x, 5))
+
+
+def p95(x: pd.Series) -> float:
+    return float(np.percentile(x, 95))
 
 
 def block_bootstrap(
@@ -665,15 +687,12 @@ def block_bootstrap(
         data_with_key[block_cols].astype(str).agg("_".join, axis=1)
     )
 
-    # Calculate original means for each aggregator group.
-    # Keep the original metric column names for the mean aggregation (no "_mean" suffix).
     original_means = data_with_key.groupby(aggregators, as_index=False)[
         metric_cols
     ].mean()
 
     all_bootstrap_results = []
 
-    # Group by all breakout columns
     for breakout_values, breakout_group in data_with_key.groupby(breakout_cols):
         unique_keys = breakout_group["_bootstrap_key"].unique()
         if len(unique_keys) < 2:
@@ -698,7 +717,6 @@ def block_bootstrap(
 
         if bootstrap_iterations:
             combined_bootstrap = pd.concat(bootstrap_iterations, ignore_index=True)
-            # Add breakout columns to keep track of group
             if isinstance(breakout_values, tuple):
                 for col, val in zip(breakout_cols, breakout_values):
                     combined_bootstrap[col] = val
@@ -708,12 +726,6 @@ def block_bootstrap(
 
     if all_bootstrap_results:
         all_bootstrap_data = pd.concat(all_bootstrap_results, ignore_index=True)
-
-        def p5(x):
-            return np.percentile(x, 5)
-
-        def p95(x):
-            return np.percentile(x, 95)
 
         agg_dict = {col: [p5, p95] for col in metric_cols}
         group_cols = list(set(breakout_cols + aggregators))
@@ -748,7 +760,7 @@ def block_bootstrap(
 
 def rank_and_collapse_data(
     static_raw_benchmark_data: pd.DataFrame,
-    aggregators: list[str],
+    aggregators: List[str],
     comparison_col: str,
     metric_col: str,
     repetition_col: str,
@@ -766,14 +778,12 @@ def rank_and_collapse_data(
     Returns:
         pd.DataFrame: DataFrame with mean ranks collapsed across repetitions for each group and comparison.
     """
-    # Get the columns to group by during ranking (all grouping columns, except the thing to rank over):
     ranking_aggregators = [col for col in aggregators if col != comparison_col]
     ranked_df = static_raw_benchmark_data.copy()
     ranked_df["rank"] = ranked_df.groupby(ranking_aggregators)[metric_col].rank(
         method="average", ascending=True
     )
 
-    # Collapse ranks by averaging across repetitions:
     collapsing_aggregators = [col for col in aggregators if col != repetition_col]
     collapsed_df = (
         ranked_df.groupby(collapsing_aggregators, observed=True)["rank"]

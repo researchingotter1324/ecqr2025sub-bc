@@ -27,7 +27,7 @@ from hpobench.config.config_types import (
 )
 
 
-def _fmt_float(value: Any) -> str:
+def fmt_float(value: Any) -> str:
     """Canonically format a float param so it is stable across Python instances.
 
     Uses ``:.6g`` (up to 6 significant digits, no trailing zeros) to avoid
@@ -102,10 +102,10 @@ def create_searcher_config_id(
         config_id += f"{sampler_acronym}"
 
     if hasattr(sampler, "interval_width") and sampler.interval_width is not None:
-        config_id += f" iw={_fmt_float(sampler.interval_width)}"
+        config_id += f" iw={fmt_float(sampler.interval_width)}"
 
     if hasattr(sampler, "c") and sampler.c is not None:
-        config_id += f" c={_fmt_float(sampler.c)}"
+        config_id += f" c={fmt_float(sampler.c)}"
 
     if hasattr(sampler, "beta_decay") and sampler.beta_decay:
         decay_parts = sampler.beta_decay.split("_")
@@ -223,13 +223,6 @@ def build_architecture_variation_configurations(
     configs = []
     for arch in architectures:
         for sampler in samplers:
-            if isinstance(sampler, ExpectedImprovementSampler) and arch in INCOMPATIBLE_WITH_EI:
-                warnings.warn(
-                    f"Skipping incompatible combination: architecture '{arch}' is not compatible "
-                    f"with ExpectedImprovementSampler. This combination will be excluded from configurations.",
-                    UserWarning
-                )
-                continue
             
             sampler_copy = deepcopy(sampler)
             searcher = QuantileConformalSearcher(

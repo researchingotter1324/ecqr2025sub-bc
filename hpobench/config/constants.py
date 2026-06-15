@@ -28,12 +28,12 @@ class ExperimentParameters(BaseModel):
     n_warm_starts: int = 15
     n_coverage_warm_starts: int = 15
     default_max_n_instances: int = 10
-    n_candidates: int = 2000
+    n_candidates: int = 10000
 
     static_data_sizes: List[int] = [25, 50, 100, 200, 400]
     static_tuning_iterations: List[int] = [0]
 
-    medium_n_repetitions_per_tuner_config: int = 20
+    medium_n_repetitions_per_tuner_config: int = 5
     large_n_repetitions_per_tuner_config: int = medium_n_repetitions_per_tuner_config 
 
 

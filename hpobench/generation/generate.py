@@ -3,7 +3,6 @@ from typing import Union, Dict, Any
 
 from ConfigSpace import Configuration
 
-from jahs_bench import Benchmark
 from abc import ABC, abstractmethod
 
 from yahpo_gym import BenchmarkSet
@@ -206,6 +205,7 @@ class Jahs201Generator(ObjectiveMetricGenerator):
     def _initialize_generator(self) -> None:
         """Initialize the JAHS-201 generator if not already initialized."""
         if not self._initialized:
+            from jahs_bench import Benchmark
             self.generator = Benchmark(
                 task=self._dataset, lazy=False, metrics=self._metrics
             )

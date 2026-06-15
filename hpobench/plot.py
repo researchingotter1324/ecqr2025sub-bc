@@ -47,7 +47,7 @@ DEFAULT_COLOR_PALETTE = [
 ]
 
 
-def _get_label(label: Optional[str], default: Optional[str]) -> Optional[str]:
+def get_label(label: Optional[str], default: Optional[str]) -> Optional[str]:
     """Get formatted label text with fallback to default value.
 
     Args:
@@ -65,32 +65,16 @@ def _get_label(label: Optional[str], default: Optional[str]) -> Optional[str]:
         return None
 
 
-def _sort_legend_items(handles, labels):
+def sort_legend_items(handles: list, labels: list) -> tuple[list, list]:
     """Sort legend items: numerically if starts with number, otherwise alphabetically."""
-
-    def sort_key(label):
-        label = str(label)
-        # Check if label starts with a number
-        if label and label[0].isdigit():
-            # Extract the numeric part and the rest
-            match = re.match(r"^(\d+(?:\.\d+)?)(.*)", label)
-            if match:
-                num_part = float(match.group(1))
-                rest_part = match.group(2)
-                return (0, num_part, rest_part.lower())  # 0 for numeric sort first
-        # Alphabetical sort for non-numeric
-        return (1, label.lower())
-
-    # Sort both handles and labels together
-    combined = list(zip(handles, labels))
-    combined.sort(key=lambda x: sort_key(x[1]))
+    combined = sorted(zip(handles, labels), key=lambda x: legend_sort_key(x[1]))
     sorted_handles, sorted_labels = zip(*combined)
     return list(sorted_handles), list(sorted_labels)
 
 
-def _calculate_legend_position(
+def calculate_legend_position(
     num_subplot_rows: int, num_legend_rows: int, plot_type: str = "standard"
-) -> tuple:
+) -> tuple[float, float]:
     """Calculate legend position and bottom margin based on subplot and legend configuration.
 
     Args:
@@ -105,24 +89,17 @@ def _calculate_legend_position(
     base_bottom_margin = 0.20
 
     if plot_type == "matrix":
-        # Matrix layout has square subplots that take less vertical space
-        # Use much smaller adjustments and different base positioning
-        base_legend_anchor_y = -0.08  # Start much closer to charts for square layout
-        subplot_row_factor = 0.002  # Minimal adjustment for additional rows
-        legend_row_factor = 0.035  # Smaller adjustment for multi-row legends
+        base_legend_anchor_y = -0.08
+        subplot_row_factor = 0.002
+        legend_row_factor = 0.035
     elif plot_type == "cd":
-        # CD layout has taller subplots, needs more adjustment
         subplot_row_factor = 0.035
         legend_row_factor = 0.06
     else:
-        # Standard layout (plot_benchmark_data)
         subplot_row_factor = 0.035
         legend_row_factor = 0.06
 
-    # Adjust for subplot rows: each additional row moves the X label up in figure coordinates
     subplot_row_adjustment = (num_subplot_rows - 1) * subplot_row_factor
-
-    # Adjust for legend rows: multi-row legends need more space
     legend_row_adjustment = (num_legend_rows - 1) * legend_row_factor
 
     legend_anchor_y = (
@@ -133,7 +110,7 @@ def _calculate_legend_position(
     return legend_anchor_y, legend_bottom_margin
 
 
-def _get_axis_values(data: pd.DataFrame, measure: Optional[str]) -> list:
+def get_axis_values(data: pd.DataFrame, measure: Optional[str]) -> list:
     """Extract unique values from a DataFrame column for axis configuration.
 
     Args:
@@ -149,12 +126,12 @@ def _get_axis_values(data: pd.DataFrame, measure: Optional[str]) -> list:
         return list(data[measure].unique())
 
 
-def _get_y_bounds(
+def get_y_bounds(
     subset: pd.DataFrame,
     y_col: str,
     y_col_lower: Optional[str],
     y_col_upper: Optional[str],
-) -> tuple:
+) -> tuple[float, float]:
     y_min = (
         subset[y_col_lower].min()
         if y_col_lower and y_col_lower in subset.columns
@@ -168,29 +145,82 @@ def _get_y_bounds(
     return y_min, y_max
 
 
-def _is_non_local(legend_label: str) -> bool:
+def legend_sort_key(label: str) -> tuple:
+    """Sort key for legend items: numeric labels sort first, then alphabetical."""
+    label = str(label)
+    if label and label[0].isdigit():
+        match = re.match(r"^(\d+(?:\.\d+)?)(.*)", label)
+        if match:
+            return (0, float(match.group(1)), match.group(2).lower())
+    return (1, label.lower())
+
+
+def identifier_sort_key(identifier: str) -> float:
+    """Sort key extracting leading numeric value from an identifier string."""
+    match = re.match(r"^(\d+(?:\.\d+)?)", str(identifier))
+    return float(match.group(1)) if match else float("inf")
+
+
+def trim_y_axis(ax: "plt.Axes", col_values: pd.Series, margin: float = 0.10) -> None:
+    """Set linear y-axis limits focused on the bulk of the data.
+
+    Uses the IQR (25th–75th percentile) as the anchor for the interesting
+    range, then extends outward to the full data min/max, and adds a
+    fractional whitespace margin on both sides.
+
+    Args:
+        ax: Axes to configure.
+        col_values: All plotted values for this panel (across all architectures).
+        margin: Fractional whitespace to add above and below the clipped range.
+    """
+    finite_vals = col_values.dropna()
+    if finite_vals.empty:
+        return
+
+    q25 = float(np.percentile(finite_vals, 25))
+    q75 = float(np.percentile(finite_vals, 75))
+    iqr = q75 - q25
+
+    fence_lo = q25 - 1.5 * iqr
+    fence_hi = q75 + 1.5 * iqr
+
+    data_min = float(finite_vals.min())
+    data_max = float(finite_vals.max())
+
+    y_lo = max(fence_lo, data_min)
+    y_hi = min(fence_hi, data_max)
+
+    if y_hi <= y_lo:
+        y_lo, y_hi = data_min, data_max
+
+    span = y_hi - y_lo if y_hi > y_lo else abs(y_hi) * 0.1 or 0.01
+    ax.set_ylim(y_lo - margin * span, y_hi + margin * span)
+
+
+def is_non_local(legend_label: str) -> bool:
     """Determine if a variant is non-local based on its label."""
     label = str(legend_label)
     if "NL-" in label:
         return True
     return False
 
-def _plot_tuner(
-    ax,
-    tuner_data,
-    x_col,
-    y_col,
-    color,
-    add_ci,
-    y_col_lower,
-    y_col_upper,
-    legend_label,
-    marker="o",
-    add_markers=True,
-):
+
+def plot_tuner(
+    ax: "plt.Axes",
+    tuner_data: pd.DataFrame,
+    x_col: str,
+    y_col: str,
+    color: str,
+    add_ci: bool,
+    y_col_lower: Optional[str],
+    y_col_upper: Optional[str],
+    legend_label: str,
+    marker: str = "o",
+    add_markers: bool = True,
+) -> None:
     marker_style = marker if add_markers else "None"
-    linestyle = "--" if _is_non_local(legend_label) else "-"
-    
+    linestyle = "--" if is_non_local(legend_label) else "-"
+
     ax.plot(
         tuner_data[x_col],
         tuner_data[y_col],
@@ -257,22 +287,19 @@ def plot_benchmark_data(
     Raises:
         ValueError: If there are duplicate X-axis values for the same combination of row_measure, col_measure, and tuner.
     """
-    # Ensure at least one of row_measure or col_measure is provided
     if row_measure is None and col_measure is None:
         raise ValueError("At least one of row_measure or col_measure must be provided.")
 
     plt.clf()
-    formatted_row_measure = _get_label(row_measure_label, row_measure)
-    formatted_col_measure = _get_label(col_measure_label, col_measure)
-    row_values = _get_axis_values(data, row_measure)
-    col_values = _get_axis_values(data, col_measure)
+    formatted_row_measure = get_label(row_measure_label, row_measure)
+    formatted_col_measure = get_label(col_measure_label, col_measure)
+    row_values = get_axis_values(data, row_measure)
+    col_values = get_axis_values(data, col_measure)
 
-    # Set consistent figure size and aspect ratio for academic readability
     base_width = 4.0
     base_height = 3.0
     fig_width = base_width * len(col_values)
     fig_height = base_height * len(row_values)
-    # Use constrained_layout for better spacing
     fig, axes = plt.subplots(
         nrows=len(row_values),
         ncols=len(col_values),
@@ -281,7 +308,6 @@ def plot_benchmark_data(
         sharey=False,
         constrained_layout=True,
     )
-    # Ensure axes is always 2D for easier iteration
     single_row = False
     if len(row_values) == 1 and len(col_values) == 1:
         axes = [[axes]]
@@ -292,9 +318,8 @@ def plot_benchmark_data(
     elif len(col_values) == 1:
         axes = [[ax] for ax in axes]
 
-    # Compute global y_min and y_max if sharing y axis
     if share_y_axis:
-        global_y_min, global_y_max = _get_y_bounds(
+        global_y_min, global_y_max = get_y_bounds(
             data, y_col, y_col_lower, y_col_upper
         )
         y_range = global_y_max - global_y_min
@@ -305,12 +330,11 @@ def plot_benchmark_data(
     for i, row_value in enumerate(row_values):
         for j, col_value in enumerate(col_values):
             ax = axes[i][j]
-            subset = data.copy()
+            subset = data
             if row_measure is not None:
                 subset = subset[subset[row_measure] == row_value]
             if col_measure is not None:
                 subset = subset[subset[col_measure] == col_value]
-            # Check for duplicate X-axis values per tuner
             for entity_idx, (entity, entity_data) in enumerate(
                 subset.groupby(entity_col)
             ):
@@ -321,11 +345,11 @@ def plot_benchmark_data(
                         "Each X-axis unit must have only one value per line."
                     )
                 legend_label = (
-                    entity_legend_mapping.get(entity, entity)
-                    if entity_legend_mapping
+                    entity_legend_mapping[entity]
+                    if entity_legend_mapping and entity in entity_legend_mapping
                     else entity
                 )
-                _plot_tuner(
+                plot_tuner(
                     ax=ax,
                     tuner_data=entity_data,
                     x_col=x_col,
@@ -347,42 +371,33 @@ def plot_benchmark_data(
             elif share_y_axis:
                 ax.set_ylim((global_y_min, global_y_max))
             else:
-                y_min, y_max = _get_y_bounds(subset, y_col, y_col_lower, y_col_upper)
+                y_min, y_max = get_y_bounds(subset, y_col, y_col_lower, y_col_upper)
                 y_range = y_max - y_min
                 buffer = 0.05 * y_range if y_range > 0 else 0.05
                 ax.set_ylim((y_min - buffer, y_max + buffer))
 
-            # Set x-axis start if specified
             if x_axis_start is not None:
                 current_xlim = ax.get_xlim()
                 ax.set_xlim(left=x_axis_start, right=current_xlim[1])
 
-            # Add titles and labels following scientific multi-panel conventions
-            x_label_to_use = x_label if x_label is not None else _get_label(None, x_col)
-            y_label_to_use = y_label if y_label is not None else _get_label(None, y_col)
-            # Fallback to column name if no label is available
+            x_label_to_use = x_label if x_label is not None else get_label(None, x_col)
+            y_label_to_use = y_label if y_label is not None else get_label(None, y_col)
             if y_label_to_use is None and y_col is not None:
                 y_label_to_use = y_col.replace("_", " ").title()
 
-            # Chart titles: top row only (i == 0)
             if col_measure is not None and i == 0:
-                # if single_col:
-                #     col_title = ""
                 if hide_col_and_row_labels:
-                    # Use only the column value, no measure label
                     col_title = f"{col_value}"
                 else:
                     col_title = f"{formatted_col_measure}: {col_value}"
                 ax.set_title(col_title, fontsize=13)
 
-            # Y labels: left column only (j == 0)
             if y_label_to_use is not None and j == 0:
                 if row_measure is not None:
                     if single_row:
                         row_title = f"{y_label_to_use}"
                     else:
                         if hide_col_and_row_labels:
-                            # Use only the y-axis label, no row measure information
                             row_title = f"{row_value} \n\n{y_label_to_use}"
                         else:
                             row_title = f"{formatted_row_measure}: {row_value} \n\n{y_label_to_use}"
@@ -390,18 +405,15 @@ def plot_benchmark_data(
                     row_title = f"{y_label_to_use}"
                 ax.set_ylabel(row_title, fontsize=13, labelpad=10)
 
-            # X labels: bottom row only (i == len(row_values) - 1)
             if i == len(row_values) - 1:
                 ax.set_xlabel(x_label_to_use, fontsize=13)
-            
+
             if not subset.empty:
                 ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
-                # Thicker axis lines for academic style
                 ax.spines["top"].set_linewidth(1.2)
                 ax.spines["right"].set_linewidth(1.2)
                 ax.spines["bottom"].set_linewidth(1.2)
                 ax.spines["left"].set_linewidth(1.2)
-                # Set tick parameters for readability
                 ax.tick_params(
                     axis="both", which="major", labelsize=11, length=6, width=1.2
                 )
@@ -410,21 +422,16 @@ def plot_benchmark_data(
                 for spine in ax.spines.values():
                     spine.set_visible(False)
 
-    # Add legend below the chart, ensuring no overlap with chart or x label
     handles, labels = ax.get_legend_handles_labels()
-    # Sort legend items: numerically if starts with number, otherwise alphabetically
-    handles, labels = _sort_legend_items(handles, labels)
+    handles, labels = sort_legend_items(handles, labels)
 
-    # Calculate positioning adjustments
     num_subplot_rows = len(row_values) if row_measure else 1
     num_legend_rows = math.ceil(len(labels) / 4)
 
-    # Use unified legend positioning function
-    legend_anchor_y, legend_bottom_margin = _calculate_legend_position(
+    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         num_subplot_rows, num_legend_rows, "standard"
     )
 
-    # Use fig.legend for a single, consistent legend
     fig.legend(
         handles,
         labels,
@@ -434,7 +441,6 @@ def plot_benchmark_data(
         bbox_to_anchor=(0.5, legend_anchor_y),
         frameon=False,
     )
-    # Tight layout for academic papers with extra bottom space for legend
     fig.subplots_adjust(
         wspace=0.15,
         hspace=0.22,
@@ -444,7 +450,6 @@ def plot_benchmark_data(
         right=0.98,
     )
 
-    # Save the plot
     for file_format in PLOT_FORMATS:
         fig.savefig(
             f"{plot_path}-{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.{file_format}",
@@ -528,38 +533,35 @@ def plot_and_save(
         ]
 
     for idx, y_col in enumerate(y_cols):
-        try:
-            y_col_lower = (
-                y_cols_lower[idx] if y_cols_lower and len(y_cols_lower) > idx else None
-            )
-            y_col_upper = (
-                y_cols_upper[idx] if y_cols_upper and len(y_cols_upper) > idx else None
-            )
+        y_col_lower = (
+            y_cols_lower[idx] if y_cols_lower and len(y_cols_lower) > idx else None
+        )
+        y_col_upper = (
+            y_cols_upper[idx] if y_cols_upper and len(y_cols_upper) > idx else None
+        )
 
-            plot_benchmark_data(
-                data=data,
-                plot_path=plot_path,
-                x_col=x_col,
-                y_col=y_col,
-                entity_col=entity_col,
-                y_col_lower=y_col_lower,
-                y_col_upper=y_col_upper,
-                add_confidence_intervals=True,
-                col_measure=col_measure,
-                row_measure=row_measure,
-                x_label=x_label,
-                y_label=y_label,
-                col_measure_label=col_measure_label,
-                row_measure_label=row_measure_label,
-                share_y_axis=share_y_axis,
-                entity_legend_mapping=entity_legend_mapping,
-                add_markers=add_markers,
-                hide_col_and_row_labels=hide_col_and_row_labels,
-                x_axis_start=x_axis_start,
-            )
-            time.sleep(1)
-        except Exception as e:
-            logger.error(f"Error plotting {y_col}: {e}")
+        plot_benchmark_data(
+            data=data,
+            plot_path=plot_path,
+            x_col=x_col,
+            y_col=y_col,
+            entity_col=entity_col,
+            y_col_lower=y_col_lower,
+            y_col_upper=y_col_upper,
+            add_confidence_intervals=True,
+            col_measure=col_measure,
+            row_measure=row_measure,
+            x_label=x_label,
+            y_label=y_label,
+            col_measure_label=col_measure_label,
+            row_measure_label=row_measure_label,
+            share_y_axis=share_y_axis,
+            entity_legend_mapping=entity_legend_mapping,
+            add_markers=add_markers,
+            hide_col_and_row_labels=hide_col_and_row_labels,
+            x_axis_start=x_axis_start,
+        )
+        time.sleep(1)
     logger.debug(f"Plots saved in {output_path} with prefix {filename_prefix}")
 
 
@@ -590,27 +592,12 @@ def plot_critical_difference_diagram(
     for _, row in significance_results.iterrows():
         alg1, alg2 = row["entity1"], row["entity2"]
         if alg1 in algorithms and alg2 in algorithms:
-            # Use the specified p-value column, with fallback logic
-            if p_value_column in row and pd.notna(row[p_value_column]):
-                p_val = row[p_value_column]
-            elif p_value_column == "p_value_corrected" and "p_value" in row:
-                p_val = row[
-                    "p_value"
-                ]  # Fallback to uncorrected if corrected not available
-            elif p_value_column == "p_value" and "p_value_corrected" in row:
-                p_val = row[
-                    "p_value_corrected"
-                ]  # Fallback to corrected if uncorrected not available
-            else:
-                p_val = 1.0  # Default if neither available
-
+            p_val = row[p_value_column]
             sig_matrix.loc[alg1, alg2] = p_val
             sig_matrix.loc[alg2, alg1] = p_val
 
-    # Clear and setup axis
     ax.clear()
 
-    # Generate the diagram
     sp.critical_difference_diagram(
         ranks=ranks_series,
         sig_matrix=sig_matrix,
@@ -619,76 +606,59 @@ def plot_critical_difference_diagram(
         label_fmt_right="  [{rank:.2f}] {label}",
     )
 
-    # Apply formatting to remove circles, colors, and vertical grid lines
-    _apply_cd_formatting(ax)
-
-    # Set aspect ratio to be rectangular like other plots
+    apply_cd_formatting(ax)
     ax.set_aspect("auto")
 
     if title:
         ax.set_title(title, fontsize=13, fontweight=title_fontweight, pad=20)
 
 
-def _apply_cd_formatting(ax):
+def apply_cd_formatting(ax):
     """Remove colored elements, circles, and vertical grid lines from critical difference diagram."""
-    # Remove all collections (this removes colored areas and circles)
     while ax.collections:
         ax.collections[0].remove()
 
-    # Set all lines to black
     for line in ax.get_lines():
         line.set_color("black")
         line.set_linewidth(1)
 
-    # Set all text to black
     for text in ax.findobj(match=matplotlib.text.Text):
         text.set_color("black")
         text.set_fontsize(10)
 
-    # Remove any patches (circles, rectangles, etc.)
     while ax.patches:
         ax.patches[0].remove()
 
-    # Turn off grid completely to remove vertical lines
     ax.grid(False)
-
-    # Clean up axis appearance
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
     ax.set_yticks([])
 
 
-def _plot_significance_matrix(
+def plot_significance_matrix(
     ax, significance_data: pd.DataFrame, rank_data: pd.DataFrame, entity_col: str
 ):
     entities = sorted(rank_data[entity_col].unique())
     avg_ranks = dict(zip(rank_data[entity_col], rank_data["rank"]))
 
-    # Create matrices
     p_matrix = pd.DataFrame(np.nan, index=entities, columns=entities)
     color_matrix = pd.DataFrame(0, index=entities, columns=entities)
 
-    # Fill diagonal
     for entity in entities:
         p_matrix.loc[entity, entity] = 1.0
         color_matrix.loc[entity, entity] = 0
 
-    # Process significance data
     for _, row in significance_data.iterrows():
         entity1, entity2 = row["entity1"], row["entity2"]
         if entity1 in entities and entity2 in entities:
-            p_val = row.get("p_value_corrected", row.get("p_value", 1.0))
-            row.get("better_entity", entity1)
-
+            p_val = row["p_value_corrected"]
             p_matrix.loc[entity1, entity2] = p_val
             p_matrix.loc[entity2, entity1] = p_val
 
             if p_val <= 0.05:
-                # Shade all significant cells in light grey, regardless of directionality
-                color_matrix.loc[entity1, entity2] = 1  # Light grey
-                color_matrix.loc[entity2, entity1] = 1  # Light grey
+                color_matrix.loc[entity1, entity2] = 1
+                color_matrix.loc[entity2, entity1] = 1
 
-    # Create annotations
     annot_matrix = p_matrix.copy()
     for i in range(len(entities)):
         for j in range(len(entities)):
@@ -699,11 +669,7 @@ def _plot_significance_matrix(
                 if not pd.isna(p_val):
                     annot_matrix.iloc[i, j] = f"{p_val:.3f}"
 
-    # Plot matrix with thin inner gridlines
-    colors = [
-        "white",
-        "#D3D3D3",
-    ]  # White for non-significant, light grey for significant
+    colors = ["white", "#D3D3D3"]
     cmap = ListedColormap(colors)
 
     sns.heatmap(
@@ -718,17 +684,16 @@ def _plot_significance_matrix(
         annot_kws={"size": 10, "color": "black"},
         linewidths=0.5,
         linecolor="black",
-        xticklabels=entities,  # Thin inner gridlines
+        xticklabels=entities,
         yticklabels=entities,
         ax=ax,
     )
 
-    # Add ranks above columns with small vertical space
     for i, entity in enumerate(entities):
-        rank = avg_ranks.get(entity, 0)
+        rank = avg_ranks[entity]
         ax.text(
             i + 0.5,
-            -0.25,  # Increased vertical space
+            -0.25,
             f"{rank:.2f}",
             ha="center",
             va="center",
@@ -738,10 +703,9 @@ def _plot_significance_matrix(
             transform=ax.transData,
         )
 
-    # Right-align "Ranks:" label with small vertical space from matrix
     ax.text(
         -0.1,
-        -0.25,  # Increased vertical space
+        -0.25,
         "Ranks:",
         ha="right",
         va="center",
@@ -761,9 +725,8 @@ def _plot_significance_matrix(
     ax.set_ylabel("")
     ax.tick_params(axis="both", labelsize=10, colors="black")
 
-    # Thick outer border
     for spine in ["top", "right", "bottom", "left"]:
-        ax.spines[spine].set_linewidth(2.4)  # Thick outer border
+        ax.spines[spine].set_linewidth(2.4)
         ax.spines[spine].set_color("black")
 
 
@@ -840,48 +803,39 @@ def plot_paired_rank_and_cd(
             height_ratios=[1] * len(row_values),
             wspace=0.25,
             hspace=0.25,
-        )  # Increased wspace for buffer between charts
+        )
     else:
-        # Original CD layout
         fig_width = base_width * 2
         fig_height = base_height * len(row_values)
 
         fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
         gs = GridSpec(nrows=len(row_values) * 2, ncols=2, figure=fig)
 
-    # Create axes based on significance plot type
     axes = []
     for i in range(len(row_values)):
         if significance_plot_type == "matrix":
-            # Left: rank plot, Right: single matrix
             ax_rank = fig.add_subplot(gs[i, 0])
             ax_matrix = fig.add_subplot(gs[i, 1])
             axes.append([ax_rank, ax_matrix])
         else:
-            # Original CD layout
             ax_rank = fig.add_subplot(gs[i * 2 : (i + 1) * 2, 0])
             ax_cd_uncorrected = fig.add_subplot(gs[i * 2, 1])
             ax_cd_corrected = fig.add_subplot(gs[i * 2 + 1, 1])
             axes.append([ax_rank, ax_cd_uncorrected, ax_cd_corrected])
 
-    # Collect legend information from first plot
     legend_handles = []
     legend_labels = []
 
     for i, row_value in enumerate(row_values):
-        # Filter data for this row
         row_data = data[data[row_measure] == row_value]
         row_sig_data = significance_data[significance_data[row_measure] == row_value]
-
-        # Left plot: Rank evolution
         ax_rank = axes[i][0]
 
-        # Plot rank evolution for each algorithm
         for entity_idx, (entity, entity_data) in enumerate(
             row_data.groupby(entity_col)
         ):
             color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
-            linestyle = "--" if _is_non_local(entity) else "-"
+            linestyle = "--" if is_non_local(entity) else "-"
             line = ax_rank.plot(
                 entity_data[x_col],
                 entity_data["rank"],
@@ -893,12 +847,10 @@ def plot_paired_rank_and_cd(
                 linestyle=linestyle,
             )[0]
 
-            # Collect legend information from first row only
             if i == 0:
                 legend_handles.append(line)
                 legend_labels.append(entity)
 
-            # Add confidence intervals if column names are provided and available
             if (
                 y_col_lower is not None
                 and y_col_upper is not None
@@ -914,7 +866,7 @@ def plot_paired_rank_and_cd(
                 )
 
         # Format left plot consistent with plot_benchmark_data
-        ax_rank.set_xlabel(_get_label(x_label, x_col), fontsize=13)
+        ax_rank.set_xlabel(get_label(x_label, x_col), fontsize=13)
         ax_rank.set_ylabel("Rank", fontsize=13, labelpad=10)
         ax_rank.set_title(
             f"{row_value}",
@@ -923,21 +875,16 @@ def plot_paired_rank_and_cd(
         )
         ax_rank.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
 
-        # For matrix layout, ensure rank chart maintains proper aspect ratio
         if significance_plot_type == "matrix":
-            # Set aspect ratio to maintain square-like proportions without squashing
             ax_rank.set_aspect("auto")
 
-        # Set x-axis start if specified
         if x_axis_start is not None:
             current_xlim = ax_rank.get_xlim()
             ax_rank.set_xlim(left=x_axis_start, right=current_xlim[1])
 
-        # Thicker axis lines for academic style (match plot_benchmark_data)
         for spine in ["top", "right", "bottom", "left"]:
             ax_rank.spines[spine].set_linewidth(1.2)
 
-        # Set tick parameters for readability (match plot_benchmark_data)
         ax_rank.tick_params(
             axis="both", which="major", labelsize=11, length=6, width=1.2
         )
@@ -945,13 +892,12 @@ def plot_paired_rank_and_cd(
             axis="both", which="minor", labelsize=9, length=3, width=1.0
         )
 
-        # Right plot: Either matrix or CD diagrams
         if significance_plot_type == "matrix":
             ax_matrix = axes[i][1]
             cd_data = row_data[row_data[x_col] == cd_budget]
 
             if not cd_data.empty and not row_sig_data.empty:
-                _plot_significance_matrix(
+                plot_significance_matrix(
                     ax=ax_matrix,
                     significance_data=row_sig_data,
                     rank_data=cd_data,
@@ -963,7 +909,6 @@ def plot_paired_rank_and_cd(
                 for spine in ax_matrix.spines.values():
                     spine.set_visible(False)
         else:
-            # Original CD diagram logic
             ax_cd_uncorrected = axes[i][1]
             ax_cd_corrected = axes[i][2]
             cd_data = row_data[row_data[x_col] == cd_budget]
@@ -987,16 +932,15 @@ def plot_paired_rank_and_cd(
                     p_value_column="p_value_corrected",
                 )
             else:
-                for ax_cd, title_suffix in [
-                    (ax_cd_uncorrected, "(Uncorrected)"),
-                    (ax_cd_corrected, "(Corrected)"),
+                for ax_cd, _ in [
+                    (ax_cd_uncorrected, None),
+                    (ax_cd_corrected, None),
                 ]:
                     ax_cd.set_xticks([])
                     ax_cd.set_yticks([])
                     for spine in ax_cd.spines.values():
                         spine.set_visible(False)
 
-            # Clean up CD axis appearance
             for ax_cd in [ax_cd_uncorrected, ax_cd_corrected]:
                 for spine in ["top", "right", "bottom", "left"]:
                     if spine in ax_cd.spines:
@@ -1008,16 +952,12 @@ def plot_paired_rank_and_cd(
                     axis="both", which="minor", labelsize=9, length=3, width=1.0
                 )
 
-    # Add shared legend at the bottom center (consistent with plot_benchmark_data)
-    handles, labels = (legend_handles, legend_labels)
-    # Sort legend items: numerically if starts with number, otherwise alphabetically
-    handles, labels = _sort_legend_items(handles, labels)
+    handles, labels = sort_legend_items(legend_handles, legend_labels)
 
-    # Calculate positioning adjustments (even if no legend, for consistent margins)
     num_subplot_rows = len(row_values)
     num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
     plot_type = "matrix" if significance_plot_type == "matrix" else "cd"
-    legend_anchor_y, legend_bottom_margin = _calculate_legend_position(
+    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         num_subplot_rows, num_legend_rows, plot_type
     )
 
@@ -1032,13 +972,9 @@ def plot_paired_rank_and_cd(
             frameon=False,
         )
 
-    # Tight layout for academic papers with extra bottom space for legend
-    # legend_bottom_margin is already calculated above
-
     if significance_plot_type == "matrix":
-        # For matrix layout, use different spacing to accommodate square subplots
         fig.subplots_adjust(
-            wspace=0.25,  # Increased spacing between charts
+            wspace=0.25,
             hspace=0.25,
             bottom=legend_bottom_margin,
             top=0.88,
@@ -1055,7 +991,6 @@ def plot_paired_rank_and_cd(
             right=0.98,
         )
 
-    # Save the plot using same format handling
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     for fmt in PLOT_FORMATS:
         full_path = f"{plot_path}_{timestamp}.{fmt}"
@@ -1076,66 +1011,97 @@ def plot_joint_architecture_and_static(
     subfolder: str,
     schema: BenchmarkDataSchema,
 ) -> None:
-    """Plot joint analysis comparing architecture optimization ranks and estimator errors."""
+    """Plot joint analysis comparing architecture optimization ranks and estimator errors.
+
+    Produces one row per benchmark.  Within each row there is one search-rank
+    panel per unique sampler (ordered alphabetically) followed by a single
+    pinball-loss panel on the right.  Each search-rank panel shows one line per
+    estimator architecture for that sampler; the pinball-loss panel is shared
+    across all samplers and shows lines per estimator architecture over training
+    data size.
+    """
     path_manager = AnalysisPathManager(cache_path, run_start_str)
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
     plot_path = os.path.join(output_path, filename_prefix)
 
     row_measure = schema.bench_col
+    arch_col = schema.estimator_architecture_col
+    sampler_col = schema.sampler_col
+
     row_values = main_processed_df[row_measure].unique()
+    samplers = sorted(main_processed_df[sampler_col].unique())
+    n_sampler_cols = len(samplers)
+    n_cols = n_sampler_cols + 1  # sampler columns + pinball-loss column
+
+    all_archs = sorted(main_processed_df[arch_col].unique())
+    color_map = {
+        arch: DEFAULT_COLOR_PALETTE[idx % len(DEFAULT_COLOR_PALETTE)]
+        for idx, arch in enumerate(all_archs)
+    }
 
     base_width = 4.0
     base_height = 4.5
-    fig_width = base_width * 2
+    fig_width = base_width * n_cols
     fig_height = base_height * len(row_values)
 
     fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
-    gs = GridSpec(nrows=len(row_values), ncols=2, figure=fig)
+    gs = GridSpec(nrows=len(row_values), ncols=n_cols, figure=fig)
 
-    legend_handles = []
-    legend_labels = []
+    legend_handles: list = []
+    legend_labels: list = []
 
     for i, row_value in enumerate(row_values):
-        ax_main = fig.add_subplot(gs[i, 0])
-        ax_static = fig.add_subplot(gs[i, 1])
-
         main_row_data = main_processed_df[main_processed_df[row_measure] == row_value]
-        
-        for entity_idx, (entity, entity_data) in enumerate(main_row_data.groupby(schema.estimator_architecture_col)):
-            color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
-            line = ax_main.plot(
-                entity_data[schema.norm_iter_unit],
-                entity_data["rank"],
-                label=entity,
-                alpha=0.8,
-                color=color,
-                marker=None,
-                markersize=4,
-            )[0]
-            if i == 0:
-                legend_handles.append(line)
-                legend_labels.append(entity)
-            if "rank_lower" in entity_data.columns and "rank_upper" in entity_data.columns:
-                ax_main.fill_between(
-                    entity_data[schema.norm_iter_unit],
-                    entity_data["rank_lower"],
-                    entity_data["rank_upper"],
-                    alpha=0.2,
-                    color=color,
-                )
-        
-        ax_main.set_xlabel("Normalized Iteration Budget", fontsize=13)
-        ax_main.set_ylabel("Rank", fontsize=13, labelpad=10)
-        ax_main.set_title(f"Optimization Performance: {row_value}", fontsize=13, pad=20)
-        ax_main.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
-        for spine in ["top", "right", "bottom", "left"]:
-            ax_main.spines[spine].set_linewidth(1.2)
-        ax_main.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
-        ax_main.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
 
+        for j, sampler in enumerate(samplers):
+            ax_search = fig.add_subplot(gs[i, j])
+            sampler_data = main_row_data[main_row_data[sampler_col] == sampler]
+
+            for arch in all_archs:
+                arch_data = sampler_data[sampler_data[arch_col] == arch]
+                if arch_data.empty:
+                    continue
+                color = color_map[arch]
+                line = ax_search.plot(
+                    arch_data[schema.norm_iter_unit],
+                    arch_data["rank"],
+                    label=arch,
+                    alpha=0.8,
+                    color=color,
+                    marker=None,
+                    markersize=4,
+                )[0]
+                if i == 0 and j == 0:
+                    legend_handles.append(line)
+                    legend_labels.append(arch)
+                if "rank_lower" in arch_data.columns and "rank_upper" in arch_data.columns:
+                    ax_search.fill_between(
+                        arch_data[schema.norm_iter_unit],
+                        arch_data["rank_lower"],
+                        arch_data["rank_upper"],
+                        alpha=0.2,
+                        color=color,
+                    )
+
+            ax_search.set_xlabel("Normalized Iteration Budget", fontsize=13)
+            ax_search.set_ylabel("Rank", fontsize=13, labelpad=10)
+            ax_search.set_title(
+                f"Optimization Performance ({sampler}): {row_value}",
+                fontsize=11,
+                pad=20,
+            )
+            ax_search.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
+            for spine in ["top", "right", "bottom", "left"]:
+                ax_search.spines[spine].set_linewidth(1.2)
+            ax_search.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
+            ax_search.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+
+        ax_static = fig.add_subplot(gs[i, n_sampler_cols])
         static_row_data = static_processed_df[static_processed_df[row_measure] == row_value]
-        
-        for entity_idx, (entity, entity_data) in enumerate(static_row_data.groupby(schema.estimator_architecture_col)):
+
+        for entity_idx, (entity, entity_data) in enumerate(
+            static_row_data.groupby(arch_col)
+        ):
             color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
             ax_static.plot(
                 entity_data[schema.data_size_col],
@@ -1146,7 +1112,7 @@ def plot_joint_architecture_and_static(
                 marker="o",
                 markersize=4,
             )
-        
+
         ax_static.set_xlabel("Training Data Size", fontsize=13)
         ax_static.set_ylabel("Rank (Pinball Loss)", fontsize=13, labelpad=10)
         ax_static.set_title(f"Estimator Error: {row_value}", fontsize=13, pad=20)
@@ -1156,9 +1122,9 @@ def plot_joint_architecture_and_static(
         ax_static.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
         ax_static.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
 
-    handles, labels = _sort_legend_items(legend_handles, legend_labels)
+    handles, labels = sort_legend_items(legend_handles, legend_labels)
     num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
-    legend_anchor_y, legend_bottom_margin = _calculate_legend_position(
+    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
 
@@ -1182,6 +1148,195 @@ def plot_joint_architecture_and_static(
 
     plt.close(fig)
     logger.debug(f"Joint plots saved in {output_path} with prefix {filename_prefix}")
+
+
+def plot_ei_architecture_triplot(
+    search_performance_df: pd.DataFrame,
+    ei_metrics_df: pd.DataFrame,
+    cache_path: str,
+    run_start_str: str,
+    filename_prefix: str,
+    analysis_type: str,
+    subfolder: str,
+    schema: BenchmarkDataSchema,
+) -> None:
+    """Three-panel EI architecture figure: search ranks | ei_collapsed rate | perc_zero_ei.
+
+    Each panel has one line per estimator architecture.  The left panel uses a
+    linear y-axis (rank); the middle and right panels use a log y-axis so that
+    small values and sudden jumps are both readable.  Log-axis ticks are placed at
+    every decade *and* at several intermediate sub-decade values, and are labelled
+    explicitly to make the scale unambiguous.
+    """
+    path_manager = AnalysisPathManager(cache_path, run_start_str)
+    output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
+    plot_path = os.path.join(output_path, filename_prefix)
+
+    arch_col = schema.estimator_architecture_col
+    bench_col = schema.bench_col
+
+    row_values = sorted(
+        set(search_performance_df[bench_col].unique()).union(
+            ei_metrics_df[bench_col].unique()
+        )
+    )
+
+    all_archs = sorted(
+        set(search_performance_df[arch_col].unique()).union(
+            ei_metrics_df[arch_col].unique()
+        )
+    )
+    color_map = {
+        arch: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
+        for i, arch in enumerate(all_archs)
+    }
+
+    base_width = 4.0
+    base_height = 4.5
+    fig_width = base_width * 3
+    fig_height = base_height * len(row_values)
+
+    fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
+    gs = GridSpec(nrows=len(row_values), ncols=3, figure=fig)
+
+    legend_handles: list = []
+    legend_labels: list = []
+
+    for i, row_value in enumerate(row_values):
+        ax_search = fig.add_subplot(gs[i, 0])
+        ax_collapsed = fig.add_subplot(gs[i, 1])
+        ax_zero_ei = fig.add_subplot(gs[i, 2])
+
+        search_row = search_performance_df[
+            search_performance_df[bench_col] == row_value
+        ]
+        ei_row = ei_metrics_df[ei_metrics_df[bench_col] == row_value]
+
+        for arch in all_archs:
+            arch_data = search_row[search_row[arch_col] == arch]
+            if arch_data.empty:
+                continue
+            color = color_map[arch]
+            line = ax_search.plot(
+                arch_data[schema.norm_iter_unit],
+                arch_data["rank"],
+                label=arch,
+                alpha=0.85,
+                color=color,
+            )[0]
+            if i == 0:
+                legend_handles.append(line)
+                legend_labels.append(arch)
+            if "rank_lower" in arch_data.columns and "rank_upper" in arch_data.columns:
+                ax_search.fill_between(
+                    arch_data[schema.norm_iter_unit],
+                    arch_data["rank_lower"],
+                    arch_data["rank_upper"],
+                    alpha=0.18,
+                    color=color,
+                )
+
+        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=12)
+        ax_search.set_ylabel("Rank", fontsize=12, labelpad=8)
+        ax_search.set_title(f"Search Performance: {row_value}", fontsize=12, pad=16)
+        ax_search.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
+        for spine in ["top", "right", "bottom", "left"]:
+            ax_search.spines[spine].set_linewidth(1.2)
+        ax_search.tick_params(axis="both", which="major", labelsize=10, length=5)
+
+        collapsed_col = "cumulative_ei_collapsed_rate"
+        all_collapsed_vals = pd.Series(dtype=float)
+        for arch in all_archs:
+            arch_data = ei_row[ei_row[arch_col] == arch].sort_values(
+                by=schema.iter_unit
+            )
+            if arch_data.empty or collapsed_col not in arch_data.columns:
+                continue
+            vals = arch_data[collapsed_col].dropna()
+            all_collapsed_vals = pd.concat([all_collapsed_vals, vals])
+            color = color_map[arch]
+            ax_collapsed.plot(
+                arch_data[schema.iter_unit],
+                arch_data[collapsed_col],
+                label=arch,
+                alpha=0.85,
+                color=color,
+            )
+
+        trim_y_axis(ax_collapsed, all_collapsed_vals)
+        ax_collapsed.set_xlabel("Iteration (Trial)", fontsize=12)
+        ax_collapsed.set_ylabel("Cumulative EI Collapsed Rate", fontsize=11, labelpad=8)
+        ax_collapsed.set_title(
+            f"EI Collapsed Rate: {row_value}", fontsize=12, pad=16
+        )
+        ax_collapsed.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
+        for spine in ["top", "right", "bottom", "left"]:
+            ax_collapsed.spines[spine].set_linewidth(1.2)
+        ax_collapsed.tick_params(axis="both", which="major", labelsize=10, length=5)
+
+        zero_ei_col = "perc_zero_ei"
+        all_zero_ei_vals = pd.Series(dtype=float)
+        for arch in all_archs:
+            arch_data = ei_row[ei_row[arch_col] == arch].sort_values(
+                by=schema.iter_unit
+            )
+            if arch_data.empty or zero_ei_col not in arch_data.columns:
+                continue
+            vals = arch_data[zero_ei_col].dropna()
+            all_zero_ei_vals = pd.concat([all_zero_ei_vals, vals])
+            color = color_map[arch]
+            ax_zero_ei.plot(
+                arch_data[schema.iter_unit],
+                arch_data[zero_ei_col],
+                label=arch,
+                alpha=0.85,
+                color=color,
+            )
+
+        trim_y_axis(ax_zero_ei, all_zero_ei_vals)
+        ax_zero_ei.set_xlabel("Iteration (Trial)", fontsize=12)
+        ax_zero_ei.set_ylabel("% Zero EI", fontsize=11, labelpad=8)
+        ax_zero_ei.set_title(f"Zero-EI Rate: {row_value}", fontsize=12, pad=16)
+        ax_zero_ei.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
+        for spine in ["top", "right", "bottom", "left"]:
+            ax_zero_ei.spines[spine].set_linewidth(1.2)
+        ax_zero_ei.tick_params(axis="both", which="major", labelsize=10, length=5)
+
+    handles, labels = sort_legend_items(legend_handles, legend_labels)
+    num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
+    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
+        len(row_values), num_legend_rows, "standard"
+    )
+
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=min(4, len(labels)),
+            fontsize=12,
+            bbox_to_anchor=(0.5, legend_anchor_y),
+            frameon=False,
+        )
+
+    fig.subplots_adjust(
+        wspace=0.30,
+        hspace=0.22,
+        bottom=legend_bottom_margin,
+        top=0.90,
+        left=0.08,
+        right=0.98,
+    )
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    for fmt in PLOT_FORMATS:
+        full_path = f"{plot_path}_{timestamp}.{fmt}"
+        fig.savefig(full_path, dpi=PLOT_DPI, bbox_inches="tight", format=fmt)
+
+    plt.close(fig)
+    logger.debug(
+        f"EI architecture tri-plot saved in {output_path} with prefix {filename_prefix}"
+    )
 
 
 def plot_joint_candidates_and_extreme_quantile(
@@ -1209,16 +1364,11 @@ def plot_joint_candidates_and_extreme_quantile(
     identifier_col = "plotting_identifier"
     row_values = search_performance_df[row_measure].unique()
 
-    # Consistent color per number-of-candidates identifier across both panels:
-    def _identifier_sort_key(identifier: str) -> float:
-        match = re.match(r"^(\d+(?:\.\d+)?)", str(identifier))
-        return float(match.group(1)) if match else float("inf")
-
     all_identifiers = sorted(
         set(search_performance_df[identifier_col]).union(
             extreme_quantile_df[identifier_col]
         ),
-        key=_identifier_sort_key,
+        key=identifier_sort_key,
     )
     color_map = {
         identifier: DEFAULT_COLOR_PALETTE[idx % len(DEFAULT_COLOR_PALETTE)]
@@ -1314,9 +1464,9 @@ def plot_joint_candidates_and_extreme_quantile(
         ax_extreme.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
         ax_extreme.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
 
-    handles, labels = _sort_legend_items(legend_handles, legend_labels)
+    handles, labels = sort_legend_items(legend_handles, legend_labels)
     num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
-    legend_anchor_y, legend_bottom_margin = _calculate_legend_position(
+    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
 

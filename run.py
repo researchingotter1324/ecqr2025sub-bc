@@ -9,6 +9,7 @@ from hpobench.config.tuner_configurations import (
     LOWERBOUND_ABLATION_CONFIGURATIONS,
     NUM_CANDIDATES_VARIATION_CONFIGURATIONS,
     NUM_CANDIDATES_JOINT_CONFIGURATIONS,
+    EI_ARCHITECTURE_VARIATION_CONFIGURATIONS,
     STATIC_ARCHITECTURES,
 )
 from hpobench.config.constants import ExperimentParameters
@@ -22,6 +23,7 @@ from hpobench.report.orchestrate import (
     run_static_benchmark,
     run_and_analyze_joint_benchmark,
     run_and_analyze_joint_candidates_extreme_quantile_benchmark,
+    run_and_analyze_ei_architecture_benchmark,
 )
 from hpobench.utils import setup_environment
 import numpy as np
@@ -37,16 +39,17 @@ experiment_params = ExperimentParameters()
 run_sections = {
     # "run_lowerbound_ablations": True,
     # "run_coverage_analysis": True,
-    # "run_architecture_variation_analysis": False,
-    "run_skew_and_heteroscedastic_external_tuning_analysis": True,
-    "run_external_tuning_analysis": True,
-    "run_preconformal_comparison_analysis": True,
-    "run_categorical_external_tuning_analysis": True,
-    "run_quantile_count_comparison": True,
-    # "run_search_tuning_effect_comparison": False,
-    "run_joint_run_analysis": True,
-    # "run_num_candidates_comparison": False,
-    "run_joint_candidates_extreme_quantile_analysis": True,
+    "run_architecture_variation_analysis": True,
+    # "run_skew_and_heteroscedastic_external_tuning_analysis": True,
+    # "run_external_tuning_analysis": True,
+    # "run_preconformal_comparison_analysis": True,
+    # "run_categorical_external_tuning_analysis": True,
+    # "run_quantile_count_comparison": True,
+    # # "run_search_tuning_effect_comparison": False,
+    # "run_joint_run_analysis": True,
+    # # "run_num_candidates_comparison": False,
+    # "run_joint_candidates_extreme_quantile_analysis": True,
+    # "run_ei_architecture_analysis": True,
 }
 
 
@@ -343,6 +346,29 @@ def main():
                 cache_path=CACHE_PATH,
                 run_start_str=run_start_str,
                 analysis_type="11_joint_candidates_extreme_quantile",
+                max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
+                n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
+                schema=schema,
+            )
+            logger.info(f"Completed task: {name}")
+        except Exception as e:
+            logger.error(f"Error in task {name}: {e}", exc_info=True)
+
+    if run_sections.get("run_ei_architecture_analysis", False):
+        name = "ei_architecture_analysis"
+        logger.info("Starting EI architecture analysis")
+        try:
+            run_and_analyze_ei_architecture_benchmark(
+                parallelize=True,
+                benchmarks=["LCBench-L"],
+                tuning_configurations=EI_ARCHITECTURE_VARIATION_CONFIGURATIONS,
+                n_warm_starts=experiment_params.n_warm_starts,
+                n_trials=experiment_params.n_trials,
+                timeout=experiment_params.timeout,
+                base_random_state=BASE_RANDOM_STATE,
+                cache_path=CACHE_PATH,
+                run_start_str=run_start_str,
+                analysis_type="12_ei_architecture_analysis",
                 max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
                 n_repetitions=experiment_params.large_n_repetitions_per_tuner_config,
                 schema=schema,

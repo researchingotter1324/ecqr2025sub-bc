@@ -9,6 +9,7 @@ from hpobench.plot import (
     plot_paired_rank_and_cd,
     plot_joint_architecture_and_static,
     plot_joint_candidates_and_extreme_quantile,
+    plot_ei_architecture_triplot,
 )
 from hpobench.process import (
     BenchmarkDataProcessor,
@@ -109,7 +110,6 @@ def compute_significance_results(
     for budget in [50, 100]:
         budget_data = benchmark_data[benchmark_data[norm_unit] == budget]
 
-        # Check dataset sufficiency based on analysis type
         if is_global:
             if budget_data[data_col].nunique() < 3:
                 logger.info(
@@ -126,7 +126,6 @@ def compute_significance_results(
                 )
                 continue
 
-        # Configure parameters based on analysis type
         if is_global:
             components = list(set(analysis_components + ["wilcoxon"]))
             prefix = f"global_{filename_prefix}"
@@ -172,7 +171,7 @@ def plot_cd_diagram(
     filename_suffix: str,
     is_global: bool = False,
     cd_budget: int = 100,
-):
+) -> None:
     """Helper function to plot CD diagram for a single result set.
 
     Args:
@@ -260,7 +259,7 @@ def analyze_main_benchmark(
     correction_method: Literal[
         "bonferroni-holm", "benjamini-hochberg"
     ] = "benjamini-hochberg",
-):
+) -> None:
     """Analyze HPO benchmark results with comprehensive statistical and visual analysis.
 
     Performs multi-faceted analysis of hyperparameter optimization benchmark data including
@@ -329,12 +328,11 @@ def analyze_main_benchmark(
 
     processor = BenchmarkDataProcessor(schema=schema)
 
-    raw_benchmark_data[data_col] = raw_benchmark_data[data_col].astype(str)
+    benchmark_data = raw_benchmark_data.copy()
+    benchmark_data[data_col] = benchmark_data[data_col].astype(str)
 
-    # 1. Create broad-use processed data:
-    # 1.1 Dataset-level relativized runtime results:
     dataset_relative_runtime_results = processor.process_performance_records(
-        raw_benchmark_data=raw_benchmark_data,
+        raw_benchmark_data=benchmark_data,
         budget_unit=runtime_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -350,9 +348,8 @@ def analyze_main_benchmark(
         analysis_type=analysis_type,
     )
 
-    # 1.2 Dataset-level iterative results:
     dataset_absolute_iterative_results = processor.process_performance_records(
-        raw_benchmark_data=raw_benchmark_data,
+        raw_benchmark_data=benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=False,
         collapse_repetitions=True,
@@ -368,9 +365,8 @@ def analyze_main_benchmark(
         analysis_type=analysis_type,
     )
 
-    # 1.2.1 Dataset-level relativized iterative results:
     dataset_relative_iterative_results = processor.process_performance_records(
-        raw_benchmark_data=raw_benchmark_data,
+        raw_benchmark_data=benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -386,9 +382,8 @@ def analyze_main_benchmark(
         analysis_type=analysis_type,
     )
 
-    # 1.3 Benchmark-level relativized runtime results:
     bench_relative_runtime_results = processor.process_performance_records(
-        raw_benchmark_data=raw_benchmark_data,
+        raw_benchmark_data=benchmark_data,
         budget_unit=runtime_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -404,9 +399,8 @@ def analyze_main_benchmark(
         analysis_type=analysis_type,
     )
 
-    # 1.4 Benchmark-level relative iterative results:
     bench_relative_iterative_results = processor.process_performance_records(
-        raw_benchmark_data=raw_benchmark_data,
+        raw_benchmark_data=benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -422,9 +416,8 @@ def analyze_main_benchmark(
         analysis_type=analysis_type,
     )
 
-    # 1.5 Benchmark-level iterative results:
     bench_absolute_iterative_results = processor.process_performance_records(
-        raw_benchmark_data=raw_benchmark_data,
+        raw_benchmark_data=benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=False,
         collapse_repetitions=True,
@@ -440,15 +433,14 @@ def analyze_main_benchmark(
         analysis_type=analysis_type,
     )
 
-    # 1.6 Cross benchmark relative runtime results:
-    global_raw_benchmark_data = raw_benchmark_data.copy()
-    global_raw_benchmark_data[data_col] = (
-        global_raw_benchmark_data[bench_col] + "_" + global_raw_benchmark_data[data_col]
+    global_benchmark_data = benchmark_data.copy()
+    global_benchmark_data[data_col] = (
+        global_benchmark_data[bench_col] + "_" + global_benchmark_data[data_col]
     )
-    unique_benchmarks = sorted(global_raw_benchmark_data[bench_col].unique())
-    global_raw_benchmark_data[bench_col] = " + ".join(unique_benchmarks)
+    unique_benchmarks = sorted(global_benchmark_data[bench_col].unique())
+    global_benchmark_data[bench_col] = " + ".join(unique_benchmarks)
     global_bench_relative_runtime_results = processor.process_performance_records(
-        raw_benchmark_data=global_raw_benchmark_data,
+        raw_benchmark_data=global_benchmark_data,
         budget_unit=runtime_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -457,9 +449,8 @@ def analyze_main_benchmark(
         n_bootstraps=n_bootstraps,
     )
 
-    # 1.7 Cross benchmark relative iterative results:
     global_bench_relative_iterative_results = processor.process_performance_records(
-        raw_benchmark_data=global_raw_benchmark_data,
+        raw_benchmark_data=global_benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -468,9 +459,8 @@ def analyze_main_benchmark(
         n_bootstraps=n_bootstraps,
     )
 
-    # 1.8 Cross benchmark dataset relative runtime results:
     global_dataset_relative_runtime_results = processor.process_performance_records(
-        raw_benchmark_data=global_raw_benchmark_data,
+        raw_benchmark_data=global_benchmark_data,
         budget_unit=runtime_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -479,9 +469,8 @@ def analyze_main_benchmark(
         n_bootstraps=n_bootstraps,
     )
 
-    # 1.9 Cross benchmark dataset relative iterative results:
     global_dataset_relative_iterative_results = processor.process_performance_records(
-        raw_benchmark_data=global_raw_benchmark_data,
+        raw_benchmark_data=global_benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -490,30 +479,26 @@ def analyze_main_benchmark(
         n_bootstraps=n_bootstraps,
     )
 
-    # 2. Carry out component analysis:
-    # 2.2 Coverage analysis plots:
     if "coverage" in analysis_components:
         if starting_coverage_trial is not None:
-            raw_benchmark_data_adj = raw_benchmark_data[
-                raw_benchmark_data[iter_unit] >= starting_coverage_trial
+            coverage_data = benchmark_data[
+                benchmark_data[iter_unit] >= starting_coverage_trial
             ]
         else:
-            raw_benchmark_data_adj = raw_benchmark_data.copy()
+            coverage_data = benchmark_data
 
-        if raw_benchmark_data_adj[bench_col].nunique() == 1:
-            dataset_absolute_iterative_results_adj = (
-                processor.process_performance_records(
-                    raw_benchmark_data=raw_benchmark_data_adj,
-                    budget_unit=iter_unit,
-                    relativize_budget=False,
-                    collapse_repetitions=True,
-                    collapse_datasets=False,
-                    extra_ranking_cols=[confidence_level_col],
-                    n_bootstraps=n_bootstraps,
-                )
+        if coverage_data[bench_col].nunique() == 1:
+            coverage_iterative_results = processor.process_performance_records(
+                raw_benchmark_data=coverage_data,
+                budget_unit=iter_unit,
+                relativize_budget=False,
+                collapse_repetitions=True,
+                collapse_datasets=False,
+                extra_ranking_cols=[confidence_level_col],
+                n_bootstraps=n_bootstraps,
             )
             plot_and_save(
-                data=dataset_absolute_iterative_results_adj,
+                data=coverage_iterative_results,
                 x_col=iter_unit,
                 y_cols=["cumulative_coverage_error", "rolling_coverage_error"],
                 entity_col=tuner_col,
@@ -531,21 +516,18 @@ def analyze_main_benchmark(
                 hide_col_and_row_labels=False,
             )
 
-            # Snapshot plot (pick one dataset, and only show CV+ vs. Unconformalized):
-            # NOTE: All hardcoded
-            if "7593" in dataset_absolute_iterative_results_adj[data_col].unique():
-                snapshot_data = dataset_absolute_iterative_results_adj[
-                    dataset_absolute_iterative_results_adj[data_col] == "7593"
+            if "7593" in coverage_iterative_results[data_col].unique():
+                snapshot_data = coverage_iterative_results[
+                    coverage_iterative_results[data_col] == "7593"
                 ]
             else:
                 random_data_col_value = (
-                    dataset_absolute_iterative_results_adj[data_col]
+                    coverage_iterative_results[data_col]
                     .sample(n=1, random_state=42)
                     .iloc[0]
                 )
-                snapshot_data = dataset_absolute_iterative_results_adj[
-                    dataset_absolute_iterative_results_adj[data_col]
-                    == random_data_col_value
+                snapshot_data = coverage_iterative_results[
+                    coverage_iterative_results[data_col] == random_data_col_value
                 ]
             snapshot_data = snapshot_data[
                 ~snapshot_data[tuner_col].str.contains("Split")
@@ -570,18 +552,13 @@ def analyze_main_benchmark(
             )
 
         else:
-            # TODO: Change so this loops through each benchmark slice like in later sections:
             logger.warning(
                 "Skipping coverage plots: can only plot configurations with a single benchmark."
             )
 
-        # TODO: This function is a bit archaic and not in line with the processor in process.py
-        # you must ensure that the entity_column uniquely identifies each variant to rank across:
-        raw_benchmark_data_filtered = raw_benchmark_data_adj[
-            ~(raw_benchmark_data_adj[breach_col].isna())
-        ]
+        coverage_data_filtered = coverage_data[~(coverage_data[breach_col].isna())]
         run_and_save_calibration_statistics(
-            raw_benchmark_data=raw_benchmark_data_filtered,
+            raw_benchmark_data=coverage_data_filtered,
             aggregators=[
                 bench_col,
                 data_col,
@@ -606,14 +583,13 @@ def analyze_main_benchmark(
             random_state=1234,
         )
 
-    # Dataset level analysis:
     if "dataset_performances" in analysis_components:
         for benchmark in dataset_absolute_iterative_results[bench_col].unique():
-            benchmark_data = dataset_absolute_iterative_results[
+            bench_slice = dataset_absolute_iterative_results[
                 dataset_absolute_iterative_results[bench_col] == benchmark
             ]
             plot_and_save(
-                data=benchmark_data,
+                data=bench_slice,
                 x_col=iter_unit,
                 y_cols=["best_performance", "rank"],
                 entity_col=tuner_col,
@@ -630,15 +606,12 @@ def analyze_main_benchmark(
                 hide_col_and_row_labels=False,
             )
 
-    # Rank analysis:
     if "rank_analysis" in analysis_components:
-        bench_relative_runtime_results_filled_bounds = (
-            bench_relative_runtime_results.copy()
-        )
-        bench_relative_runtime_results_filled_bounds[
-            "rank_lower"
-        ] = bench_relative_runtime_results_filled_bounds["rank_lower"].fillna(
-            bench_relative_runtime_results_filled_bounds["rank"]
+        bench_relative_runtime_results_filled_bounds = bench_relative_runtime_results
+        bench_relative_runtime_results_filled_bounds["rank_lower"] = (
+            bench_relative_runtime_results_filled_bounds["rank_lower"].fillna(
+                bench_relative_runtime_results_filled_bounds["rank"]
+            )
         )
         bench_relative_runtime_results_filled_bounds = (
             create_default_plotting_identifier(
@@ -665,13 +638,11 @@ def analyze_main_benchmark(
             share_y_axis=False,
             x_label="% Budget Used",
         )
-        bench_relative_iterative_results_filled_bounds = (
-            bench_relative_iterative_results.copy()
-        )
-        bench_relative_iterative_results_filled_bounds[
-            "rank_lower"
-        ] = bench_relative_iterative_results_filled_bounds["rank_lower"].fillna(
-            bench_relative_iterative_results_filled_bounds["rank"]
+        bench_relative_iterative_results_filled_bounds = bench_relative_iterative_results
+        bench_relative_iterative_results_filled_bounds["rank_lower"] = (
+            bench_relative_iterative_results_filled_bounds["rank_lower"].fillna(
+                bench_relative_iterative_results_filled_bounds["rank"]
+            )
         )
         bench_relative_iterative_results_filled_bounds = (
             create_default_plotting_identifier(
@@ -699,7 +670,6 @@ def analyze_main_benchmark(
             x_label="% Budget Used",
         )
 
-        # Plot global figures across benchmarks:
         global_bench_relative_iterative_results = create_default_plotting_identifier(
             df=global_bench_relative_iterative_results,
             tuner_col=tuner_col,
@@ -724,7 +694,6 @@ def analyze_main_benchmark(
             x_label="% Budget Used",
         )
 
-        # 2.1 Significance Analysis for Runtime Data:
         significance_results_for_cd = compute_significance_results(
             benchmark_data=dataset_relative_runtime_results,
             norm_unit=norm_runtime_unit,
@@ -763,10 +732,8 @@ def analyze_main_benchmark(
             is_global=True,
         )
 
-        # Plot CD diagrams for runtime data
         cd_budget = 100
 
-        # Plot local CD diagrams if method is in analysis components
         if cd_significance_method in analysis_components:
             plot_cd_diagram(
                 benchmark_data=bench_relative_runtime_results,
@@ -785,7 +752,6 @@ def analyze_main_benchmark(
                 cd_budget=cd_budget,
             )
 
-        # Plot global CD diagrams
         plot_cd_diagram(
             benchmark_data=global_bench_relative_runtime_results,
             significance_results=global_significance_results_for_cd,
@@ -803,7 +769,6 @@ def analyze_main_benchmark(
             cd_budget=cd_budget,
         )
 
-        # 2.2 Significance Analysis for Iterative Data:
         significance_results_for_cd_iterative = compute_significance_results(
             benchmark_data=dataset_relative_iterative_results,
             norm_unit=norm_iter_unit,
@@ -842,8 +807,6 @@ def analyze_main_benchmark(
             is_global=True,
         )
 
-        # Plot CD diagrams for iterative data
-        # Plot local CD diagrams if method is in analysis components
         if cd_significance_method in analysis_components:
             plot_cd_diagram(
                 benchmark_data=bench_relative_iterative_results,
@@ -862,7 +825,6 @@ def analyze_main_benchmark(
                 cd_budget=cd_budget,
             )
 
-        # Plot global CD diagrams
         plot_cd_diagram(
             benchmark_data=global_bench_relative_iterative_results,
             significance_results=global_significance_results_for_cd_iterative,
@@ -880,19 +842,15 @@ def analyze_main_benchmark(
             cd_budget=cd_budget,
         )
 
-    # NOTE: For next two breakout plots, values are first ranked by benchmark
-    # and then split by sampler or architecture on column axis of plots, but
-    # the rank is not only between the lines on a given plot, it's global, and
-    # then split in post.
-    # Sampler comparison plots:
     if "sampler_comparison" in analysis_components:
         for dataset, x_col in [
             (bench_relative_runtime_results, norm_runtime_unit),
             (bench_relative_iterative_results, norm_iter_unit),
         ]:
-            dataset["plotting_identifier"] = dataset[estimator_architecture_col]
+            dataset_with_id = dataset.copy()
+            dataset_with_id["plotting_identifier"] = dataset_with_id[estimator_architecture_col]
             plot_and_save(
-                data=dataset,
+                data=dataset_with_id,
                 x_col=x_col,
                 y_cols=["rank"],
                 entity_col="plotting_identifier",
@@ -909,15 +867,15 @@ def analyze_main_benchmark(
                 x_label="% Budget Used",
             )
 
-    # Architecture comparison plots:
     if "architecture_comparison" in analysis_components:
         for dataset, x_col in [
             (bench_relative_runtime_results, norm_runtime_unit),
             (bench_relative_iterative_results, norm_iter_unit),
         ]:
-            dataset["plotting_identifier"] = dataset[sampler_col]
+            dataset_with_id = dataset.copy()
+            dataset_with_id["plotting_identifier"] = dataset_with_id[sampler_col]
             plot_and_save(
-                data=dataset,
+                data=dataset_with_id,
                 x_col=x_col,
                 y_cols=["rank"],
                 entity_col="plotting_identifier",
@@ -934,37 +892,25 @@ def analyze_main_benchmark(
                 x_label="% Budget Used",
             )
 
-    # Conformalization effect analysis:
     if "conformalization_effect" in analysis_components:
-        for benchmark in raw_benchmark_data[bench_col].unique():
-            benchmark_data = raw_benchmark_data[
-                raw_benchmark_data[bench_col] == benchmark
-            ]
-            # NOTE: Raw data for this component is expected to contain ccqr_optimization
-            # variants where we want to rank a same architecture, repeated for
-            # many samplers, ranked across varying levels of n_preconformal_trials, hence
-            # 'extra_ranking_cols=[estimator_architecture_col, sampler_col]':
+        for benchmark in benchmark_data[bench_col].unique():
+            bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
             for budget_unit in [runtime_unit, iter_unit]:
-                conformalized_vs_nonconformalized_results = (
-                    processor.process_performance_records(
-                        raw_benchmark_data=benchmark_data,
-                        budget_unit=budget_unit,
-                        relativize_budget=True,
-                        collapse_repetitions=True,
-                        collapse_datasets=True,
-                        extra_ranking_cols=[estimator_architecture_col, sampler_col],
-                        n_bootstraps=n_bootstraps,
-                    )
+                conformalization_results = processor.process_performance_records(
+                    raw_benchmark_data=bench_slice,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col, sampler_col],
+                    n_bootstraps=n_bootstraps,
                 )
-                conformalized_vs_nonconformalized_results[
-                    "plotting_identifier"
-                ] = conformalized_vs_nonconformalized_results[
-                    n_pre_conformal_trials_col
-                ].apply(
-                    lambda x: "Unconformalized" if x > 32 else "Conformalized + DtACI"
+                conformalization_results["plotting_identifier"] = (
+                    conformalization_results[n_pre_conformal_trials_col]
+                    .apply(lambda x: "Unconformalized" if x > 32 else "Conformalized + DtACI")
                 )
                 plot_and_save(
-                    data=conformalized_vs_nonconformalized_results,
+                    data=conformalization_results,
                     x_col=f"normalized_{budget_unit}",
                     y_cols=["rank"],
                     entity_col="plotting_identifier",
@@ -981,39 +927,29 @@ def analyze_main_benchmark(
                     x_label="% Budget Used",
                 )
 
-    # Quantile count comparison analysis:
     if "quantile_count_comparison" in analysis_components:
-        if len(raw_benchmark_data[sampler_col].unique()) > 1:
+        if len(benchmark_data[sampler_col].unique()) > 1:
             raise ValueError(
                 "Quantile count comparison analysis requires only one sampler."
             )
-        for benchmark in raw_benchmark_data[bench_col].unique():
-            benchmark_data = raw_benchmark_data[
-                raw_benchmark_data[bench_col] == benchmark
-            ]
-            # NOTE: Raw data for this component is expected to contain ccqr_optimization
-            # variants where we want to rank a same sampler, repeated for
-            # many architectures, ranked across varying levels of n_quantiles, hence
-            # 'extra_ranking_cols=[estimator_architecture_col, sampler_col]':
+        for benchmark in benchmark_data[bench_col].unique():
+            bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
             for budget_unit in [runtime_unit, iter_unit]:
-                quantile_count_comparison_results = (
-                    processor.process_performance_records(
-                        raw_benchmark_data=benchmark_data,
-                        budget_unit=budget_unit,
-                        relativize_budget=True,
-                        collapse_repetitions=True,
-                        collapse_datasets=True,
-                        extra_ranking_cols=[estimator_architecture_col, sampler_col],
-                        n_bootstraps=n_bootstraps,
-                    )
+                quantile_count_results = processor.process_performance_records(
+                    raw_benchmark_data=bench_slice,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col, sampler_col],
+                    n_bootstraps=n_bootstraps,
                 )
-                quantile_count_comparison_results[
-                    "plotting_identifier"
-                ] = quantile_count_comparison_results[n_quantiles_col].apply(
-                    lambda x: f"{int(x)} Quantiles"
+                quantile_count_results["plotting_identifier"] = (
+                    quantile_count_results[n_quantiles_col]
+                    .apply(lambda x: f"{int(x)} Quantiles")
                 )
                 plot_and_save(
-                    data=quantile_count_comparison_results,
+                    data=quantile_count_results,
                     x_col=f"normalized_{budget_unit}",
                     y_cols=["rank"],
                     entity_col="plotting_identifier",
@@ -1031,31 +967,24 @@ def analyze_main_benchmark(
                 )
 
     if "search_tuning_effect_comparison" in analysis_components:
-        if len(raw_benchmark_data[sampler_col].unique()) > 1:
+        if len(benchmark_data[sampler_col].unique()) > 1:
             raise ValueError(
                 "Search tuning effect comparison analysis requires only one sampler."
             )
-        for benchmark in raw_benchmark_data[bench_col].unique():
-            benchmark_data = raw_benchmark_data[
-                raw_benchmark_data[bench_col] == benchmark
-            ]
-            # NOTE: Raw data for this component is expected to contain ccqr_optimization
-            # variants where we want to rank a same architecture across varying
-            # levels of tuning, hence 'extra_ranking_cols=[estimator_architecture_col]':
+        for benchmark in benchmark_data[bench_col].unique():
+            bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
             for budget_unit in [runtime_unit, iter_unit]:
-                search_tuning_effect_comparison_results = (
-                    processor.process_performance_records(
-                        raw_benchmark_data=benchmark_data,
-                        budget_unit=budget_unit,
-                        relativize_budget=True,
-                        collapse_repetitions=True,
-                        collapse_datasets=True,
-                        extra_ranking_cols=[estimator_architecture_col],
-                        n_bootstraps=n_bootstraps,
-                    )
+                search_tuning_results = processor.process_performance_records(
+                    raw_benchmark_data=bench_slice,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col],
+                    n_bootstraps=n_bootstraps,
                 )
                 plot_and_save(
-                    data=search_tuning_effect_comparison_results,
+                    data=search_tuning_results,
                     x_col=f"normalized_{budget_unit}",
                     y_cols=["rank"],
                     entity_col=searcher_tuning_framework_col,
@@ -1072,39 +1001,29 @@ def analyze_main_benchmark(
                     x_label="% Budget Used",
                 )
 
-    # Number of candidates comparison analysis:
     if "num_candidates_comparison" in analysis_components:
-        if len(raw_benchmark_data[sampler_col].unique()) > 1:
+        if len(benchmark_data[sampler_col].unique()) > 1:
             raise ValueError(
                 "Number of candidates comparison analysis requires only one sampler."
             )
-        for benchmark in raw_benchmark_data[bench_col].unique():
-            benchmark_data = raw_benchmark_data[
-                raw_benchmark_data[bench_col] == benchmark
-            ]
-            # NOTE: Raw data for this component is expected to contain ccqr_optimization
-            # variants where we want to rank a same sampler, repeated for
-            # many architectures, ranked across varying levels of n_candidates, hence
-            # 'extra_ranking_cols=[estimator_architecture_col, sampler_col]':
+        for benchmark in benchmark_data[bench_col].unique():
+            bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
             for budget_unit in [runtime_unit, iter_unit]:
-                num_candidates_comparison_results = (
-                    processor.process_performance_records(
-                        raw_benchmark_data=benchmark_data,
-                        budget_unit=budget_unit,
-                        relativize_budget=True,
-                        collapse_repetitions=True,
-                        collapse_datasets=True,
-                        extra_ranking_cols=[estimator_architecture_col, sampler_col],
-                        n_bootstraps=n_bootstraps,
-                    )
+                num_candidates_results = processor.process_performance_records(
+                    raw_benchmark_data=bench_slice,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col, sampler_col],
+                    n_bootstraps=n_bootstraps,
                 )
-                num_candidates_comparison_results[
-                    "plotting_identifier"
-                ] = num_candidates_comparison_results[n_candidates_col].apply(
-                    lambda x: f"{int(x)} Candidates"
+                num_candidates_results["plotting_identifier"] = (
+                    num_candidates_results[n_candidates_col]
+                    .apply(lambda x: f"{int(x)} Candidates")
                 )
                 plot_and_save(
-                    data=num_candidates_comparison_results,
+                    data=num_candidates_results,
                     x_col=f"normalized_{budget_unit}",
                     y_cols=["rank"],
                     entity_col="plotting_identifier",
@@ -1128,7 +1047,7 @@ def analyze_searcher_tuning_effect(
     run_start_str: str,
     analysis_type: str,
     schema: BenchmarkDataSchema,
-):
+) -> None:
     """Analyze the effect of searcher tuning iterations on search estimator performance.
 
     Args:
@@ -1219,7 +1138,7 @@ def analyze_searcher_estimator_comparison(
     run_start_str: str,
     analysis_type: str,
     schema: BenchmarkDataSchema,
-):
+) -> None:
     """Compare baseline performance across different searcher estimator architectures.
 
     Analyzes the inherent performance differences between estimator architectures (e.g.,
@@ -1251,11 +1170,9 @@ def analyze_searcher_estimator_comparison(
     data_col = schema.data_col
     data_size_col = schema.data_size_col
 
-    # Filter results to only include non-tuned configurations:
     non_tuned_results_df = static_raw_benchmark_data[
         static_raw_benchmark_data[schema.tuning_iterations_col] == 0
     ]
-    # Rank and collapse the data:
     filtered_df = rank_and_collapse_data(
         static_raw_benchmark_data=non_tuned_results_df,
         aggregators=[
@@ -1326,20 +1243,25 @@ def analyze_joint_architecture_and_static(
     analysis_type: str,
     schema: BenchmarkDataSchema,
 ) -> None:
-    """Process both main architecture variation and static benchmarks, then plot jointly."""
+    """Process both main architecture variation and static benchmarks, then plot jointly.
+
+    Computes per-sampler search-performance ranks so that the plot can render
+    one search-rank panel per sampler alongside a single pinball-loss panel.
+    """
     processor = BenchmarkDataProcessor(schema=schema)
-    
+
     bench_relative_iterative_results = processor.process_performance_records(
         raw_benchmark_data=main_raw_data,
         budget_unit=schema.iter_unit,
         relativize_budget=True,
         collapse_repetitions=True,
         collapse_datasets=True,
-        extra_ranking_cols=None,
+        extra_ranking_cols=[schema.sampler_col],
         n_bootstraps=1000,
     )
-    
+
     bench_relative_iterative_results["rank_lower"] = bench_relative_iterative_results["rank_lower"].fillna(bench_relative_iterative_results["rank"])
+    bench_relative_iterative_results["rank_upper"] = bench_relative_iterative_results["rank_upper"].fillna(bench_relative_iterative_results["rank"])
 
     non_tuned_results_df = static_raw_data[
         static_raw_data[schema.tuning_iterations_col] == 0
@@ -1436,9 +1358,6 @@ def analyze_joint_candidates_and_extreme_quantile(
     processor = BenchmarkDataProcessor(schema=schema)
     iter_unit = schema.iter_unit
 
-    # Left panel: search-performance ranks, normalized budget (like quantile-count comparison).
-    # relativize_budget=True so the x-axis is 0-100% and collapse_datasets uses block-bootstrap
-    # to produce rank_lower/rank_upper.
     search_performance_results = processor.process_performance_records(
         raw_benchmark_data=raw_benchmark_data,
         budget_unit=iter_unit,
@@ -1466,10 +1385,6 @@ def analyze_joint_candidates_and_extreme_quantile(
         analysis_type=analysis_type,
     )
 
-    # Right panel: cumulative extreme-quantile usage rate, absolute iteration budget.
-    # relativize_budget=False so that cumulative_extreme_quantile_rate is included in
-    # the metrics list inside process_iteration_budget_data, exactly mirroring how
-    # cumulative_coverage_error is produced and collapsed for coverage plots.
     extreme_quantile_results = processor.process_performance_records(
         raw_benchmark_data=raw_benchmark_data,
         budget_unit=iter_unit,
@@ -1501,3 +1416,107 @@ def analyze_joint_candidates_and_extreme_quantile(
         subfolder="joint_candidates_analysis",
         schema=schema,
     )
+
+
+def analyze_ei_architecture(
+    raw_benchmark_data: pd.DataFrame,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
+    schema: BenchmarkDataSchema,
+    n_bootstraps: int = 1000,
+) -> None:
+    """Process EI architecture variation data and produce the EI architecture tri-plot.
+
+    Produces a three-panel figure (one row per benchmark) where each line represents
+    a different estimator architecture, all sharing a single EI sampler:
+    - Left panel: search performance rank over the normalized iteration budget.
+    - Middle panel: cumulative average of the ``ei_collapsed`` binary indicator
+      (collapsed/hard-max EI rate) over the absolute iteration budget.
+    - Right panel: ``perc_zero_ei`` per trial — already a percentage value from
+      the study object, averaged across repetitions without prior accumulation.
+
+    Exactly one sampler must be present in the data (enforced here).
+
+    Args:
+        raw_benchmark_data: Raw benchmark data for a single EI sampler across
+            multiple estimator architectures.
+        cache_path: Root directory for saving analysis outputs.
+        run_start_str: Timestamp identifier for this experimental run.
+        analysis_type: Analysis category label for file organization.
+        schema: Data schema defining column names.
+        n_bootstraps: Number of bootstrap samples for rank confidence intervals.
+
+    Raises:
+        ValueError: If more than one sampler is present in the data.
+    """
+    sampler_col = schema.sampler_col
+    estimator_architecture_col = schema.estimator_architecture_col
+    iter_unit = schema.iter_unit
+
+    if raw_benchmark_data[sampler_col].nunique() != 1:
+        raise ValueError(
+            "EI architecture analysis requires exactly one sampler."
+        )
+
+    processor = BenchmarkDataProcessor(schema=schema)
+
+    search_performance_results = processor.process_performance_records(
+        raw_benchmark_data=raw_benchmark_data,
+        budget_unit=iter_unit,
+        relativize_budget=True,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=None,
+        n_bootstraps=n_bootstraps,
+    )
+    search_performance_results["rank_lower"] = search_performance_results[
+        "rank_lower"
+    ].fillna(search_performance_results["rank"])
+    search_performance_results["rank_upper"] = search_performance_results[
+        "rank_upper"
+    ].fillna(search_performance_results["rank"])
+
+    save_analysis_results(
+        df=search_performance_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="ei_arch_search_performance_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    ei_metrics_results = processor.process_performance_records(
+        raw_benchmark_data=raw_benchmark_data,
+        budget_unit=iter_unit,
+        relativize_budget=False,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=None,
+        n_bootstraps=n_bootstraps,
+    )
+
+    save_analysis_results(
+        df=ei_metrics_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="ei_arch_ei_metrics_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    for benchmark in raw_benchmark_data[schema.bench_col].unique():
+        search_bench = search_performance_results[
+            search_performance_results[schema.bench_col] == benchmark
+        ]
+        ei_bench = ei_metrics_results[
+            ei_metrics_results[schema.bench_col] == benchmark
+        ]
+        plot_ei_architecture_triplot(
+            search_performance_df=search_bench,
+            ei_metrics_df=ei_bench,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix=f"ei_architecture_triplot__{benchmark}",
+            analysis_type=analysis_type,
+            subfolder="ei_architecture_analysis",
+            schema=schema,
+        )
