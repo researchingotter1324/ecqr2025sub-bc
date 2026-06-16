@@ -16,7 +16,7 @@ SUMMARY_DIR = os.path.join("cache", "snippets_outputs", "summary")
 OUT_PATH = os.path.join("cache", "snippets_outputs", "stratification_boxplots")
 
 PLOT_DPI = 300
-PLOT_FORMATS = ["eps", "png"]
+PLOT_FORMATS = ["eps", "png", "pdf"]
 
 COLOR_SELECTED = "#E69F00"
 COLOR_REST = "#464646"

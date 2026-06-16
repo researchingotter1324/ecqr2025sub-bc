@@ -8,7 +8,7 @@ from stratification_utils import (
 )
 
 BENCHMARKS = ["rbv2_aknn", "lcbench"]
-TOP_COUNT = 10
+TOP_COUNT = 5
 TOP_PERCENT = None
 MAX_PERFECT_ACC_RATIO = 0.05
 

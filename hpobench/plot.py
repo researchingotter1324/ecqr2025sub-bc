@@ -22,7 +22,7 @@ matplotlib.rcParams["mathtext.fontset"] = "stix"
 matplotlib.rcParams["font.family"] = "STIXGeneral"
 
 PLOT_DPI = 300
-PLOT_FORMATS = ["eps", "png"]
+PLOT_FORMATS = ["eps", "png", "pdf"]
 DEFAULT_COLOR_PALETTE = [
     "#464646",
     "#E69F00",
