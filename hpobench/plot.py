@@ -1053,8 +1053,10 @@ def plot_joint_architecture_and_static(
     for i, row_value in enumerate(row_values):
         main_row_data = main_processed_df[main_processed_df[row_measure] == row_value]
 
+        search_axes = []
         for j, sampler in enumerate(samplers):
             ax_search = fig.add_subplot(gs[i, j])
+            search_axes.append(ax_search)
             sampler_data = main_row_data[main_row_data[sampler_col] == sampler]
 
             for arch in all_archs:
@@ -1086,7 +1088,7 @@ def plot_joint_architecture_and_static(
             ax_search.set_xlabel("Normalized Iteration Budget", fontsize=13)
             ax_search.set_ylabel("Rank", fontsize=13, labelpad=10)
             ax_search.set_title(
-                f"Optimization Performance ({sampler}): {row_value}",
+                f"Search Performance: {sampler}",
                 fontsize=11,
                 pad=20,
             )
@@ -1095,6 +1097,17 @@ def plot_joint_architecture_and_static(
                 ax_search.spines[spine].set_linewidth(1.2)
             ax_search.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
             ax_search.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+
+        # Share y-axis across all search-rank panels in this row
+        if len(search_axes) > 1:
+            all_search_data = main_row_data[main_row_data[sampler_col].isin(samplers)]
+            rank_vals = all_search_data["rank"].dropna()
+            if not rank_vals.empty:
+                y_min = rank_vals.min()
+                y_max = rank_vals.max()
+                margin = 0.05 * (y_max - y_min) if y_max != y_min else 0.5
+                for ax_s in search_axes:
+                    ax_s.set_ylim(y_min - margin, y_max + margin)
 
         ax_static = fig.add_subplot(gs[i, n_sampler_cols])
         static_row_data = static_processed_df[static_processed_df[row_measure] == row_value]
@@ -1114,8 +1127,8 @@ def plot_joint_architecture_and_static(
             )
 
         ax_static.set_xlabel("Training Data Size", fontsize=13)
-        ax_static.set_ylabel("Rank (Pinball Loss)", fontsize=13, labelpad=10)
-        ax_static.set_title(f"Estimator Error: {row_value}", fontsize=13, pad=20)
+        ax_static.set_ylabel("Rank", fontsize=13, labelpad=10)
+        ax_static.set_title(f"Estimation Error", fontsize=13, pad=20)
         ax_static.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_static.spines[spine].set_linewidth(1.2)
@@ -1238,7 +1251,7 @@ def plot_ei_architecture_triplot(
 
         ax_search.set_xlabel("Normalized Iteration Budget", fontsize=12)
         ax_search.set_ylabel("Rank", fontsize=12, labelpad=8)
-        ax_search.set_title(f"Search Performance: {row_value}", fontsize=12, pad=16)
+        ax_search.set_title(f"Search Performance", fontsize=12, pad=16)
         ax_search.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_search.spines[spine].set_linewidth(1.2)
@@ -1264,10 +1277,10 @@ def plot_ei_architecture_triplot(
             )
 
         trim_y_axis(ax_collapsed, all_collapsed_vals)
-        ax_collapsed.set_xlabel("Iteration (Trial)", fontsize=12)
-        ax_collapsed.set_ylabel("Cumulative EI Collapsed Rate", fontsize=11, labelpad=8)
+        ax_collapsed.set_xlabel("Iteration", fontsize=12)
+        ax_collapsed.set_ylabel("Cumulative Failed Iteration Rate (%)", fontsize=11, labelpad=8)
         ax_collapsed.set_title(
-            f"EI Collapsed Rate: {row_value}", fontsize=12, pad=16
+            f"EI Collapse Rate", fontsize=12, pad=16
         )
         ax_collapsed.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
         for spine in ["top", "right", "bottom", "left"]:
@@ -1294,9 +1307,9 @@ def plot_ei_architecture_triplot(
             )
 
         trim_y_axis(ax_zero_ei, all_zero_ei_vals)
-        ax_zero_ei.set_xlabel("Iteration (Trial)", fontsize=12)
-        ax_zero_ei.set_ylabel("% Zero EI", fontsize=11, labelpad=8)
-        ax_zero_ei.set_title(f"Zero-EI Rate: {row_value}", fontsize=12, pad=16)
+        ax_zero_ei.set_xlabel("Iteration", fontsize=12)
+        ax_zero_ei.set_ylabel("Zero EI Rate (%)", fontsize=11, labelpad=8)
+        ax_zero_ei.set_title(f"Zero EI Rate", fontsize=12, pad=16)
         ax_zero_ei.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
         for spine in ["top", "right", "bottom", "left"]:
             ax_zero_ei.spines[spine].set_linewidth(1.2)
@@ -1427,7 +1440,7 @@ def plot_joint_candidates_and_extreme_quantile(
 
         ax_search.set_xlabel("Normalized Iteration Budget", fontsize=13)
         ax_search.set_ylabel("Rank", fontsize=13, labelpad=10)
-        ax_search.set_title(f"Optimization Performance: {row_value}", fontsize=13, pad=20)
+        ax_search.set_title(f"Search Performance", fontsize=13, pad=20)
         ax_search.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_search.spines[spine].set_linewidth(1.2)
@@ -1455,9 +1468,9 @@ def plot_joint_candidates_and_extreme_quantile(
                 markersize=4,
             )
 
-        ax_extreme.set_xlabel("Iteration (Trial)", fontsize=13)
-        ax_extreme.set_ylabel("Extreme Quantile Used (%)", fontsize=13, labelpad=10)
-        ax_extreme.set_title(f"Extreme Quantile Usage: {row_value}", fontsize=13, pad=20)
+        ax_extreme.set_xlabel("Iteration", fontsize=13)
+        ax_extreme.set_ylabel("Extreme Quantile Usage (%)", fontsize=13, labelpad=10)
+        ax_extreme.set_title(f"Quantile Collapse", fontsize=13, pad=20)
         ax_extreme.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_extreme.spines[spine].set_linewidth(1.2)

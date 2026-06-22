@@ -30,7 +30,7 @@ EI_N_QUANTILES = 10
 
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
 
-STATIC_ARCHITECTURES = ["qgbm", "qleaf", "qknn", "ql", "qens3", "qens1"]
+STATIC_ARCHITECTURES = ["qgbm", "qleaf", "qknn", "ql", "qens3"]
 
 
 COVERAGE_ANALYSIS_CONFIGURATIONS = []
@@ -122,8 +122,6 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             "qknn",
             "ql",
             "qens3",
-            "qens1",
-            "sqr",
     ],
     samplers=[
         
@@ -347,6 +345,8 @@ EI_ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
 EI_ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
                 "qgbm",
+                "qleaf",
+                "qknn",
                 "ql",
                 "qens3",
     ],

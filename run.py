@@ -38,7 +38,7 @@ experiment_params = ExperimentParameters()
 # Granular run section control
 run_sections = {
     # "run_lowerbound_ablations": False,
-    # "run_coverage_analysis": True,
+    "run_coverage_analysis": True,
     # "run_architecture_variation_analysis": False,
     "run_skew_and_heteroscedastic_external_tuning_analysis": True,
     "run_external_tuning_analysis": True,

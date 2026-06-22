@@ -1018,6 +1018,33 @@ def analyze_main_benchmark(
                     x_label="% Budget Used",
                 )
 
+                available_architectures = conformalization_results[estimator_architecture_col].unique()
+                spinoff_architecture = (
+                    "qgbm"
+                    if "qgbm" in available_architectures
+                    else available_architectures[0]
+                )
+                conformalization_results_single_arch = conformalization_results[
+                    conformalization_results[estimator_architecture_col] == spinoff_architecture
+                ]
+                plot_and_save(
+                    data=conformalization_results_single_arch,
+                    x_col=f"normalized_{budget_unit}",
+                    y_cols=["rank"],
+                    entity_col="plotting_identifier",
+                    col_measure=sampler_col,
+                    row_measure=estimator_architecture_col,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"perf_vs_{budget_unit}_n_pre_conformal_trials__{benchmark}_{spinoff_architecture}_only",
+                    analysis_type=analysis_type,
+                    subfolder="conformalization_effect",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+
     if "quantile_count_comparison" in analysis_components:
         for benchmark in benchmark_data[bench_col].unique():
             bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
