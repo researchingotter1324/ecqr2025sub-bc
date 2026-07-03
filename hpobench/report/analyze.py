@@ -1020,8 +1020,8 @@ def analyze_main_benchmark(
 
                 available_architectures = conformalization_results[estimator_architecture_col].unique()
                 spinoff_architecture = (
-                    "qgbm"
-                    if "qgbm" in available_architectures
+                    "QGBM"
+                    if "QGBM" in available_architectures
                     else available_architectures[0]
                 )
                 conformalization_results_single_arch = conformalization_results[

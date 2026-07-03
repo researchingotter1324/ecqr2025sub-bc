@@ -119,7 +119,6 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
     architectures=[
             "qgbm",
             "qleaf",
-            "qknn",
             "ql",
             "qens3",
     ],
@@ -145,7 +144,6 @@ LOWERBOUND_ABLATION_ADAPTER = "DtACI"
 LOWERBOUND_ABLATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
         "ql",
-        # "qknn",
         "qleaf",
         "qgbm",
         "qens3",
@@ -208,9 +206,8 @@ PRECONFORMAL_COMPARISON_CONFIGURATIONS = []
 for architecture in [
     "ql",
     "qgbm",
-    "qens3",
+    "qleaf",
 ]:
-    # Simulate normal pre-conformal cutoff vs. unreachable one:
     for pre_conformal_trials in [32, 10000]:
         if pre_conformal_trials == 10000:
             adapter = None
@@ -295,7 +292,7 @@ for searcher_tuning_framework in [None, "fixed"]:
 
 NUM_CANDIDATES_VARIATION_ADAPTER = "DtACI"
 NUM_CANDIDATES_VARIATION_CONFIGURATIONS = []
-NUM_CANDIDATES_VALUES = [500, 3000, 10000, 50000]
+NUM_CANDIDATES_VALUES = [500, 5000, 50000]
 
 for n_candidates in NUM_CANDIDATES_VALUES:
     NUM_CANDIDATES_VARIATION_CONFIGURATIONS.extend(
@@ -346,7 +343,6 @@ EI_ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configur
     architectures=[
                 "qgbm",
                 "qleaf",
-                "qknn",
                 "ql",
                 "qens3",
     ],

@@ -72,6 +72,84 @@ def sort_legend_items(handles: list, labels: list) -> tuple[list, list]:
     return list(sorted_handles), list(sorted_labels)
 
 
+def compute_legend_ncols(n_items: int, max_cols: int = 6) -> int:
+    """Choose the number of legend columns for a balanced, readable layout.
+
+    Rules:
+    - Up to ``max_cols`` items may appear in a single row.
+    - Prefer fitting everything in at most 2 rows.
+    - Never leave exactly 1 item on the last row (looks unbalanced).
+    - Among valid column counts, pick the one that minimises unevenness
+      (i.e. the number of empty slots on the last row).  When there is a
+      tie, prefer the larger column count (fewer rows).
+    - If N > 2 * max_cols the layout will require 3+ rows; in that case
+      simply use max_cols to keep row count as low as possible.
+
+    Args:
+        n_items: Total number of legend entries.
+        max_cols: Maximum permitted columns per row (default 6).
+
+    Returns:
+        Number of columns to pass to ``fig.legend(ncol=...)``.
+    """
+    if n_items <= max_cols:
+        return n_items
+
+    min_ncols_for_2rows = math.ceil(n_items / 2)
+    if min_ncols_for_2rows > max_cols:
+        return max_cols
+
+    best_ncols = max_cols
+    best_unevenness = float("inf")
+
+    for ncols in range(min_ncols_for_2rows, max_cols + 1):
+        last_row = n_items % ncols
+        if last_row == 0:
+            last_row = ncols
+        if last_row == 1:
+            continue
+        unevenness = ncols - last_row
+        if unevenness < best_unevenness or (
+            unevenness == best_unevenness and ncols > best_ncols
+        ):
+            best_unevenness = unevenness
+            best_ncols = ncols
+
+    return best_ncols
+
+
+def reorder_legend_for_ltr_layout(
+    handles: list, labels: list, ncols: int
+) -> tuple[list, list]:
+    """Reorder alphabetically sorted handles/labels for left-to-right, row-by-row layout.
+
+    Matplotlib's legend fills columns top-down within each column. To display items
+    left-to-right, row-by-row (even when sorted), we must transpose the layout.
+
+    Args:
+        handles: Sorted list of plot handles.
+        labels: Corresponding sorted list of labels.
+        ncols: Number of columns in the legend layout.
+
+    Returns:
+        Reordered (handles, labels) tuples for left-to-right, row-by-row display.
+    """
+    n_items = len(handles)
+    nrows = math.ceil(n_items / ncols)
+
+    reordered_handles = []
+    reordered_labels = []
+
+    for row in range(nrows):
+        for col in range(ncols):
+            idx = col * nrows + row
+            if idx < n_items:
+                reordered_handles.append(handles[idx])
+                reordered_labels.append(labels[idx])
+
+    return reordered_handles, reordered_labels
+
+
 def calculate_legend_position(
     num_subplot_rows: int, num_legend_rows: int, plot_type: str = "standard"
 ) -> tuple[float, float]:
@@ -390,7 +468,7 @@ def plot_benchmark_data(
                     col_title = f"{col_value}"
                 else:
                     col_title = f"{formatted_col_measure}: {col_value}"
-                ax.set_title(col_title, fontsize=13)
+                ax.set_title(col_title, fontsize=14)
 
             if y_label_to_use is not None and j == 0:
                 if row_measure is not None:
@@ -403,10 +481,10 @@ def plot_benchmark_data(
                             row_title = f"{formatted_row_measure}: {row_value} \n\n{y_label_to_use}"
                 else:
                     row_title = f"{y_label_to_use}"
-                ax.set_ylabel(row_title, fontsize=13, labelpad=10)
+                ax.set_ylabel(row_title, fontsize=14, labelpad=10)
 
             if i == len(row_values) - 1:
-                ax.set_xlabel(x_label_to_use, fontsize=13)
+                ax.set_xlabel(x_label_to_use, fontsize=14)
 
             if not subset.empty:
                 ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
@@ -415,9 +493,9 @@ def plot_benchmark_data(
                 ax.spines["bottom"].set_linewidth(1.2)
                 ax.spines["left"].set_linewidth(1.2)
                 ax.tick_params(
-                    axis="both", which="major", labelsize=11, length=6, width=1.2
+                    axis="both", which="major", labelsize=12, length=6, width=1.2
                 )
-                ax.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+                ax.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
             else:
                 for spine in ax.spines.values():
                     spine.set_visible(False)
@@ -426,7 +504,10 @@ def plot_benchmark_data(
     handles, labels = sort_legend_items(handles, labels)
 
     num_subplot_rows = len(row_values) if row_measure else 1
-    num_legend_rows = math.ceil(len(labels) / 4)
+    legend_ncols = compute_legend_ncols(len(labels))
+    num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
+    
+    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
 
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         num_subplot_rows, num_legend_rows, "standard"
@@ -436,8 +517,8 @@ def plot_benchmark_data(
         handles,
         labels,
         loc="lower center",
-        ncol=min(4, len(labels)),
-        fontsize=12,
+        ncol=legend_ncols,
+        fontsize=13,
         bbox_to_anchor=(0.5, legend_anchor_y),
         frameon=False,
     )
@@ -866,11 +947,11 @@ def plot_paired_rank_and_cd(
                 )
 
         # Format left plot consistent with plot_benchmark_data
-        ax_rank.set_xlabel(get_label(x_label, x_col), fontsize=13)
-        ax_rank.set_ylabel("Rank", fontsize=13, labelpad=10)
+        ax_rank.set_xlabel(get_label(x_label, x_col), fontsize=14)
+        ax_rank.set_ylabel("Rank", fontsize=14, labelpad=10)
         ax_rank.set_title(
             f"{row_value}",
-            fontsize=13,
+            fontsize=14,
             pad=20,
         )
         ax_rank.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
@@ -886,10 +967,10 @@ def plot_paired_rank_and_cd(
             ax_rank.spines[spine].set_linewidth(1.2)
 
         ax_rank.tick_params(
-            axis="both", which="major", labelsize=11, length=6, width=1.2
+            axis="both", which="major", labelsize=12, length=6, width=1.2
         )
         ax_rank.tick_params(
-            axis="both", which="minor", labelsize=9, length=3, width=1.0
+            axis="both", which="minor", labelsize=10, length=3, width=1.0
         )
 
         if significance_plot_type == "matrix":
@@ -955,7 +1036,11 @@ def plot_paired_rank_and_cd(
     handles, labels = sort_legend_items(legend_handles, legend_labels)
 
     num_subplot_rows = len(row_values)
-    num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
+    legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
+    num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
+    
+    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
+    
     plot_type = "matrix" if significance_plot_type == "matrix" else "cd"
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         num_subplot_rows, num_legend_rows, plot_type
@@ -966,8 +1051,8 @@ def plot_paired_rank_and_cd(
             handles,
             labels,
             loc="lower center",
-            ncol=min(4, len(labels)),
-            fontsize=12,
+            ncol=legend_ncols,
+            fontsize=13,
             bbox_to_anchor=(0.5, legend_anchor_y),
             frameon=False,
         )
@@ -1040,7 +1125,7 @@ def plot_joint_architecture_and_static(
     }
 
     base_width = 4.0
-    base_height = 4.5
+    base_height = 3.0
     fig_width = base_width * n_cols
     fig_height = base_height * len(row_values)
 
@@ -1085,18 +1170,18 @@ def plot_joint_architecture_and_static(
                         color=color,
                     )
 
-            ax_search.set_xlabel("Normalized Iteration Budget", fontsize=13)
-            ax_search.set_ylabel("Rank", fontsize=13, labelpad=10)
+            ax_search.set_xlabel("Normalized Iteration Budget", fontsize=14)
+            ax_search.set_ylabel("Search Rank", fontsize=14, labelpad=10)
             ax_search.set_title(
-                f"Search Performance: {sampler}",
-                fontsize=11,
+                f"{sampler}",
+                fontsize=14,
                 pad=20,
             )
             ax_search.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
             for spine in ["top", "right", "bottom", "left"]:
                 ax_search.spines[spine].set_linewidth(1.2)
-            ax_search.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
-            ax_search.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+            ax_search.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
+            ax_search.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
         # Share y-axis across all search-rank panels in this row
         if len(search_axes) > 1:
@@ -1126,17 +1211,21 @@ def plot_joint_architecture_and_static(
                 markersize=4,
             )
 
-        ax_static.set_xlabel("Training Data Size", fontsize=13)
-        ax_static.set_ylabel("Rank", fontsize=13, labelpad=10)
-        ax_static.set_title(f"Estimation Error", fontsize=13, pad=20)
+        ax_static.set_xlabel("Training Data Size", fontsize=14)
+        ax_static.set_ylabel("Error Rank", fontsize=14, labelpad=10)
+        ax_static.set_title(f"Estimation Error Ablation", fontsize=14, pad=20)
         ax_static.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_static.spines[spine].set_linewidth(1.2)
-        ax_static.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
-        ax_static.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+        ax_static.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
+        ax_static.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
     handles, labels = sort_legend_items(legend_handles, legend_labels)
-    num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
+    legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
+    num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
+    
+    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
+    
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
@@ -1146,8 +1235,8 @@ def plot_joint_architecture_and_static(
             handles,
             labels,
             loc="lower center",
-            ncol=min(4, len(labels)),
-            fontsize=12,
+            ncol=legend_ncols,
+            fontsize=13,
             bbox_to_anchor=(0.5, legend_anchor_y),
             frameon=False,
         )
@@ -1205,7 +1294,7 @@ def plot_ei_architecture_triplot(
     }
 
     base_width = 4.0
-    base_height = 4.5
+    base_height = 3.0
     fig_width = base_width * 3
     fig_height = base_height * len(row_values)
 
@@ -1249,13 +1338,14 @@ def plot_ei_architecture_triplot(
                     color=color,
                 )
 
-        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=12)
-        ax_search.set_ylabel("Rank", fontsize=12, labelpad=8)
-        ax_search.set_title(f"Search Performance", fontsize=12, pad=16)
+        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=14)
+        ax_search.set_ylabel("Rank", fontsize=14, labelpad=10)
+        ax_search.set_title(f"Search Performance", fontsize=14, pad=20)
         ax_search.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_search.spines[spine].set_linewidth(1.2)
-        ax_search.tick_params(axis="both", which="major", labelsize=10, length=5)
+        ax_search.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
+        ax_search.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
         collapsed_col = "cumulative_ei_collapsed_rate"
         all_collapsed_vals = pd.Series(dtype=float)
@@ -1277,15 +1367,16 @@ def plot_ei_architecture_triplot(
             )
 
         trim_y_axis(ax_collapsed, all_collapsed_vals)
-        ax_collapsed.set_xlabel("Iteration", fontsize=12)
-        ax_collapsed.set_ylabel("Cumulative Failed Iteration Rate (%)", fontsize=11, labelpad=8)
+        ax_collapsed.set_xlabel("Iteration", fontsize=14)
+        ax_collapsed.set_ylabel("Cumulative Failed Iteration Rate (%)", fontsize=14, labelpad=10)
         ax_collapsed.set_title(
-            f"EI Collapse Rate", fontsize=12, pad=16
+            f"EI Collapse Rate", fontsize=14, pad=20
         )
         ax_collapsed.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
         for spine in ["top", "right", "bottom", "left"]:
             ax_collapsed.spines[spine].set_linewidth(1.2)
-        ax_collapsed.tick_params(axis="both", which="major", labelsize=10, length=5)
+        ax_collapsed.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
+        ax_collapsed.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
         zero_ei_col = "perc_zero_ei"
         all_zero_ei_vals = pd.Series(dtype=float)
@@ -1307,16 +1398,21 @@ def plot_ei_architecture_triplot(
             )
 
         trim_y_axis(ax_zero_ei, all_zero_ei_vals)
-        ax_zero_ei.set_xlabel("Iteration", fontsize=12)
-        ax_zero_ei.set_ylabel("Zero EI Rate (%)", fontsize=11, labelpad=8)
-        ax_zero_ei.set_title(f"Zero EI Rate", fontsize=12, pad=16)
+        ax_zero_ei.set_xlabel("Iteration", fontsize=14)
+        ax_zero_ei.set_ylabel("Zero EI Rate (%)", fontsize=14, labelpad=10)
+        ax_zero_ei.set_title(f"Zero EI Rate", fontsize=14, pad=20)
         ax_zero_ei.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
         for spine in ["top", "right", "bottom", "left"]:
             ax_zero_ei.spines[spine].set_linewidth(1.2)
-        ax_zero_ei.tick_params(axis="both", which="major", labelsize=10, length=5)
+        ax_zero_ei.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
+        ax_zero_ei.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
     handles, labels = sort_legend_items(legend_handles, legend_labels)
-    num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
+    legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
+    num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
+    
+    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
+    
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
@@ -1326,8 +1422,8 @@ def plot_ei_architecture_triplot(
             handles,
             labels,
             loc="lower center",
-            ncol=min(4, len(labels)),
-            fontsize=12,
+            ncol=legend_ncols,
+            fontsize=13,
             bbox_to_anchor=(0.5, legend_anchor_y),
             frameon=False,
         )
@@ -1389,7 +1485,7 @@ def plot_joint_candidates_and_extreme_quantile(
     }
 
     base_width = 4.0
-    base_height = 4.5
+    base_height = 3.0
     fig_width = base_width * 2
     fig_height = base_height * len(row_values)
 
@@ -1438,14 +1534,14 @@ def plot_joint_candidates_and_extreme_quantile(
                     color=color,
                 )
 
-        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=13)
-        ax_search.set_ylabel("Rank", fontsize=13, labelpad=10)
-        ax_search.set_title(f"Search Performance", fontsize=13, pad=20)
+        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=14)
+        ax_search.set_ylabel("Rank", fontsize=14, labelpad=10)
+        ax_search.set_title(f"Search Performance", fontsize=14, pad=20)
         ax_search.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_search.spines[spine].set_linewidth(1.2)
-        ax_search.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
-        ax_search.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+        ax_search.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
+        ax_search.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
         extreme_row_data = extreme_quantile_df[
             extreme_quantile_df[row_measure] == row_value
@@ -1468,17 +1564,21 @@ def plot_joint_candidates_and_extreme_quantile(
                 markersize=4,
             )
 
-        ax_extreme.set_xlabel("Iteration", fontsize=13)
-        ax_extreme.set_ylabel("Extreme Quantile Usage (%)", fontsize=13, labelpad=10)
-        ax_extreme.set_title(f"Quantile Collapse", fontsize=13, pad=20)
+        ax_extreme.set_xlabel("Iteration", fontsize=14)
+        ax_extreme.set_ylabel("Extreme Quantile Usage (%)", fontsize=14, labelpad=10)
+        ax_extreme.set_title(f"Quantile Collapse", fontsize=14, pad=20)
         ax_extreme.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
         for spine in ["top", "right", "bottom", "left"]:
             ax_extreme.spines[spine].set_linewidth(1.2)
-        ax_extreme.tick_params(axis="both", which="major", labelsize=11, length=6, width=1.2)
-        ax_extreme.tick_params(axis="both", which="minor", labelsize=9, length=3, width=1.0)
+        ax_extreme.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
+        ax_extreme.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
     handles, labels = sort_legend_items(legend_handles, legend_labels)
-    num_legend_rows = math.ceil(len(labels) / 4) if labels else 1
+    legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
+    num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
+    
+    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
+    
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
@@ -1488,8 +1588,8 @@ def plot_joint_candidates_and_extreme_quantile(
             handles,
             labels,
             loc="lower center",
-            ncol=min(4, len(labels)),
-            fontsize=12,
+            ncol=legend_ncols,
+            fontsize=13,
             bbox_to_anchor=(0.5, legend_anchor_y),
             frameon=False,
         )

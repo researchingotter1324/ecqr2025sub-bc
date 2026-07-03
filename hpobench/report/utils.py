@@ -476,6 +476,7 @@ def aggregate_and_save(
     run_start_str: str,
     filename: str,
     analysis_type: str,
+    random_state: Optional[int] = 42,
 ) -> pd.DataFrame:
     aggregated_results = block_bootstrap(
         data=data,
@@ -484,6 +485,7 @@ def aggregate_and_save(
         aggregators=grouping_cols,
         metric_cols=metrics,
         n_bootstraps=1000,
+        random_state=random_state,
     )
 
     save_analysis_results(
@@ -563,6 +565,7 @@ def run_and_save_calibration_statistics(
             aggregators=[benchmark_col, tuner_column],
             metric_cols=metric_columns,
             n_bootstraps=n_bootstraps,
+            random_state=random_state,
         )
         # Generate LaTeX table for calibration metrics
         latex_metrics_str = format_calibration_metrics_to_latex(

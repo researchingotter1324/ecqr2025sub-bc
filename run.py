@@ -1,3 +1,16 @@
+# isort: skip_file
+# NOTE: numpy/random must be imported and seeded BEFORE any other project imports.
+# Several downstream modules (e.g. hpobench.config.tuner_configurations) construct
+# sampler/searcher objects at import time; if those constructors consume global
+# randomness, seeding must already be in place or those objects bake in
+# non-reproducible, OS-entropy-derived state for the entire run.
+import numpy as np
+import random
+
+BASE_RANDOM_STATE = 42
+np.random.seed(BASE_RANDOM_STATE)
+random.seed(BASE_RANDOM_STATE)
+
 from hpobench.config.tuner_configurations import (
     PRECONFORMAL_COMPARISON_CONFIGURATIONS,
     EXTERNAL_TUNING_CONFIGURATIONS,
@@ -26,12 +39,6 @@ from hpobench.report.orchestrate import (
     run_and_analyze_ei_architecture_benchmark,
 )
 from hpobench.utils import setup_environment
-import numpy as np
-import random
-
-BASE_RANDOM_STATE = 42
-np.random.seed(BASE_RANDOM_STATE)
-random.seed(BASE_RANDOM_STATE)
 
 experiment_params = ExperimentParameters()
 

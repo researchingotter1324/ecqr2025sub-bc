@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 SEED = 42
 
-BENCHMARKS = ["lcbench"]
+BENCHMARKS = ["lcbench", "rbv2_aknn"]
 TOP_COUNT = 5
 MAX_PERFECT_ACC_RATIO = 0.05
 MIN_RUNTIME = 8

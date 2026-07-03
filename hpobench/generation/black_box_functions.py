@@ -75,19 +75,23 @@ def weierstrass(x, a=0.5, b=3, kmax=20):
     return weierstrass_value
 
 
-def shekel(x, m=10):
+def shekel(x, m=10, random_state=0):
     """Shekel function - multimodal optimization benchmark with variable local minima.
 
     Args:
         x: Input vector with shape (n_dimensions,).
         m: Number of local minima (default: 10).
+        random_state: Seed for the local minima positions/weights, so that the
+            same configuration deterministically maps to the same function
+            value across evaluations and runs (default: 0).
 
     Returns:
         Function value at point x (negated for minimization).
     """
     n = len(x)
-    A = np.random.rand(m, n) * 10  # random A matrix for each run
-    C = np.random.rand(m) * 10
+    rng = np.random.default_rng(random_state)
+    A = rng.random((m, n)) * 10  # fixed A matrix, independent of evaluation order
+    C = rng.random(m) * 10
     shekel_value = 0
     for i in range(m):
         shekel_value -= 1 / (C[i] + np.sum((x - A[i]) ** 2))
