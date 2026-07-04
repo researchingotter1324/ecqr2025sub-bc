@@ -1170,6 +1170,16 @@ def plot_joint_architecture_and_static(
                         color=color,
                     )
 
+            if j == 0:
+                ax_search.text(
+                    -0.18, 0.5, "(a)",
+                    transform=ax_search.transAxes,
+                    fontsize=16,
+                    fontweight="bold",
+                    ha="right",
+                    va="center",
+                )
+
             ax_search.set_xlabel("Normalized Iteration Budget", fontsize=14)
             ax_search.set_ylabel("Search Rank", fontsize=14, labelpad=10)
             ax_search.set_title(
@@ -1210,6 +1220,15 @@ def plot_joint_architecture_and_static(
                 marker="o",
                 markersize=4,
             )
+
+        ax_static.text(
+            -0.18, 0.5, "(b)",
+            transform=ax_static.transAxes,
+            fontsize=16,
+            fontweight="bold",
+            ha="right",
+            va="center",
+        )
 
         ax_static.set_xlabel("Training Data Size", fontsize=14)
         ax_static.set_ylabel("Error Rank", fontsize=14, labelpad=10)
