@@ -232,7 +232,6 @@ for architecture in [
         ),
                 ],
                 n_pre_conformal_trials=pre_conformal_trials,
-                calibration_split_strategy="adaptive",
             )
         )
 
