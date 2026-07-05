@@ -32,7 +32,7 @@ LOCAL_SEARCH_RANDOM_STATE = 42
 
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
 
-STATIC_ARCHITECTURES = ["qgbm", "qleaf", "qknn", "ql", "qens3"]
+STATIC_ARCHITECTURES = ["qgbm", "qleaf", "ql", "qens3"]
 
 
 COVERAGE_ANALYSIS_CONFIGURATIONS = []
