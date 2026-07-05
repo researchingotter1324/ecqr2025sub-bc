@@ -28,6 +28,8 @@ from hpobench.config.config_types import (
 TS_N_QUANTILES = 6
 EI_N_QUANTILES = 10
 
+LOCAL_SEARCH_RANDOM_STATE = 42
+
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
 
 STATIC_ARCHITECTURES = ["qgbm", "qleaf", "qknn", "ql", "qens3"]
@@ -133,7 +135,7 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             n_quantiles=EI_N_QUANTILES,
             adapter=ARCHITECTURE_VARIATION_ADAPTER,
             target_type="incumbent",
-            local_search= SmacLocalSearch(),
+            local_search= SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
         ),
     ],
     calibration_split_strategy="train_test_split",
@@ -150,20 +152,20 @@ LOWERBOUND_ABLATION_CONFIGURATIONS = build_architecture_variation_configurations
     ],
     samplers=[
         # --- logarithmic_decay: vary c and interval_width ---
-        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.2, local_search=SmacLocalSearch()),
-        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.2, local_search=SmacLocalSearch()),
-        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.8, local_search=SmacLocalSearch()),
-        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=2.0, local_search=SmacLocalSearch()),
-        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=2.0, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.2, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.2, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=0.8, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=2.0, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
+        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="logarithmic_decay",         c=2.0, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
         # --- inverse_square_root_decay: vary c and interval_width ---
-        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=0.2, local_search=SmacLocalSearch()),
-        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=0.8, local_search=SmacLocalSearch()),
-        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=2.0, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=0.2, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
+        LowerBoundSampler(interval_width=0.8,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=0.8, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
+        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay="inverse_square_root_decay", c=2.0, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
         # --- no decay (beta fixed at 1): vary interval_width ---
-        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay=None,                       c=1.0, local_search=SmacLocalSearch()),
-        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay=None,                       c=1.0, local_search=SmacLocalSearch()),
+        LowerBoundSampler(interval_width=0.6,  adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay=None,                       c=1.0, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
+        LowerBoundSampler(interval_width=0.95, adapter=LOWERBOUND_ABLATION_ADAPTER, beta_decay=None,                       c=1.0, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
         # --- pessimistic baseline (no LCB, pure lower-bound scoring) ---
-        PessimisticLowerBoundSampler(interval_width=0.8, adapter=LOWERBOUND_ABLATION_ADAPTER, local_search=SmacLocalSearch()),
+        PessimisticLowerBoundSampler(interval_width=0.8, adapter=LOWERBOUND_ABLATION_ADAPTER, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
     ],
     calibration_split_strategy="train_test_split",
 )
@@ -185,8 +187,8 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = (
                 n_quantiles=EI_N_QUANTILES,
                 adapter=LIMITED_ARCHITECTURE_ADAPTER,
                 target_type="incumbent",
-                local_search=SmacLocalSearch(
-    ), ),
+                local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
+            ),
     ExpectedImprovementSampler(
             n_quantiles=EI_N_QUANTILES,
             adapter=LIMITED_ARCHITECTURE_ADAPTER,
@@ -226,7 +228,7 @@ for architecture in [
             n_quantiles=EI_N_QUANTILES,
             adapter=PRECONFORMAL_ADAPTER,
             target_type="incumbent",
-            local_search=SmacLocalSearch(),
+            local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
         ),
                 ],
                 n_pre_conformal_trials=pre_conformal_trials,
@@ -255,7 +257,7 @@ for n_quantiles in QUANTILE_COUNT_VALUES:
                     n_quantiles=n_quantiles,
                     adapter=QUANTILE_COUNT_VARIATION_ADAPTER,
                     target_type="incumbent",
-                    local_search=SmacLocalSearch(),
+                    local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
                 ),
             ],
             n_pre_conformal_trials=32,
@@ -351,7 +353,7 @@ EI_ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configur
             n_quantiles=EI_N_QUANTILES,
             adapter=EI_ARCHITECTURE_VARIATION_ADAPTER,
             target_type="incumbent",
-            local_search= SmacLocalSearch(),
+            local_search= SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
         ),
     ],
     n_pre_conformal_trials=32,
