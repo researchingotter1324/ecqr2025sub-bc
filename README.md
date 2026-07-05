@@ -24,7 +24,22 @@ Create a python 3.10.9 (or other 3.10 version) environment with your environment
    pip install .
    ```
 
-### 2. SMAC
+### 2. Optuna
+
+`optuna` is not an explicit pypi package dependency of the `hpobench` package, but it is required to run Optuna GP sampler benchmarks.
+
+To resolve this, clone the below anonymized, up-to-date fork of Optuna, which tracks upstream closely and adds targeted customizations to the GP sampler:
+   ```bash
+   git clone https://github.com/researchingotter1324/ecqr2025sub-optuna
+   cd ecqr2025sub-optuna
+   ```
+
+And install it in your environment directly by navigating to it while your python environment is active and running:
+   ```bash
+   pip install .
+   ```
+
+### 3. SMAC
 
 `smac` is not an explicit pypi package dependancy of the `hpobench` package, due to incompatibility issues, but it is required to run SMAC benchmarks.
 
@@ -46,7 +61,7 @@ SWIG is required to build the `pyrfr` dependency for SMAC. Install it using cond
    ```
 SWIG must be installed in the same environment where you're installing the package dependencies.
 
-### 3. Conformal Quantile Optimization Methods
+### 4. Conformal Quantile Optimization Methods
 
 All conformal quantile HPO algorithms are contained in ccqr_optimization. Like SMAC, we need to build this dependency from source. 
 
@@ -62,7 +77,7 @@ Then install it in your environment directly by navigating to it while your pyth
    pip install .
    ```
 
-### 4. Benchmark Environment Setup
+### 5. Benchmark Environment Setup
 
 #### YAHPO Gym
 
