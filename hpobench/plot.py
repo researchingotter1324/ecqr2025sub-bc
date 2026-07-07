@@ -118,38 +118,6 @@ def compute_legend_ncols(n_items: int, max_cols: int = 6) -> int:
     return best_ncols
 
 
-def reorder_legend_for_ltr_layout(
-    handles: list, labels: list, ncols: int
-) -> tuple[list, list]:
-    """Reorder alphabetically sorted handles/labels for left-to-right, row-by-row layout.
-
-    Matplotlib's legend fills columns top-down within each column. To display items
-    left-to-right, row-by-row (even when sorted), we must transpose the layout.
-
-    Args:
-        handles: Sorted list of plot handles.
-        labels: Corresponding sorted list of labels.
-        ncols: Number of columns in the legend layout.
-
-    Returns:
-        Reordered (handles, labels) tuples for left-to-right, row-by-row display.
-    """
-    n_items = len(handles)
-    nrows = math.ceil(n_items / ncols)
-
-    reordered_handles = []
-    reordered_labels = []
-
-    for row in range(nrows):
-        for col in range(ncols):
-            idx = col * nrows + row
-            if idx < n_items:
-                reordered_handles.append(handles[idx])
-                reordered_labels.append(labels[idx])
-
-    return reordered_handles, reordered_labels
-
-
 def calculate_legend_position(
     num_subplot_rows: int, num_legend_rows: int, plot_type: str = "standard"
 ) -> tuple[float, float]:
@@ -506,9 +474,6 @@ def plot_benchmark_data(
     num_subplot_rows = len(row_values) if row_measure else 1
     legend_ncols = compute_legend_ncols(len(labels))
     num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
-    
-    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
-
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         num_subplot_rows, num_legend_rows, "standard"
     )
@@ -1038,9 +1003,6 @@ def plot_paired_rank_and_cd(
     num_subplot_rows = len(row_values)
     legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
     num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
-    
-    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
-    
     plot_type = "matrix" if significance_plot_type == "matrix" else "cd"
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         num_subplot_rows, num_legend_rows, plot_type
@@ -1242,9 +1204,6 @@ def plot_joint_architecture_and_static(
     handles, labels = sort_legend_items(legend_handles, legend_labels)
     legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
     num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
-    
-    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
-    
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
@@ -1429,9 +1388,6 @@ def plot_ei_architecture_triplot(
     handles, labels = sort_legend_items(legend_handles, legend_labels)
     legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
     num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
-    
-    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
-    
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
@@ -1595,9 +1551,6 @@ def plot_joint_candidates_and_extreme_quantile(
     handles, labels = sort_legend_items(legend_handles, legend_labels)
     legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
     num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
-    
-    handles, labels = reorder_legend_for_ltr_layout(handles, labels, legend_ncols)
-    
     legend_anchor_y, legend_bottom_margin = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
