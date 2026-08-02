@@ -26,7 +26,7 @@ CELL_HEIGHT = 3.0
 COLUMN_LABELS = ["Heteroscedastic Stratification", "Asymmetric Stratification"]
 SCORE_LABELS = [
     "Breusch-Pagan R²",
-    "Groeneveld-Meeden Asymmetry",
+    "Mean Abs. Bowley Asymmetry",
 ]
 DATA_FILENAME_TEMPLATES = [
     "heteroscedasticity_boxplot_{benchmark}.json",
