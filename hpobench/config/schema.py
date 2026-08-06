@@ -53,6 +53,7 @@ class BenchmarkDataSchema(BaseModel):
     sampler_adapter_col: str = "sampler_adapter"
     tuner_searcher_tuning_framework_col: str = "tuner_searcher_tuning_framework"
     n_pre_conformal_trials_col: str = "n_pre_conformal_trials"
+    calibration_split_strategy_col: str = "calibration_split_strategy"
     data_size_col: str = "data_size"
     tuning_iterations_col: str = "tuning_iterations"
     estimator_error_col: str = "mean_pinball_loss"

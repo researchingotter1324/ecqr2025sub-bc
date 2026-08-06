@@ -129,6 +129,10 @@ def create_searcher_config_id(
     if n_pre_conformal_trials and n_pre_conformal_trials != 20:
         config_id += f" pre={n_pre_conformal_trials}"
 
+    calibration_strategy = getattr(searcher, "calibration_split_strategy", None)
+    if calibration_strategy and calibration_strategy != "train_test_split":
+        config_id += " cv+"
+
     if searcher_tuning_framework == "fixed":
         config_id += " TUNED-F"
     elif searcher_tuning_framework == "reward_cost":

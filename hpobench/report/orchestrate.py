@@ -277,6 +277,13 @@ def process_single_experiment_config(
                 else:
                     n_pre_conformal_trials = ""
 
+                if hasattr(tuner.tuner.searcher, "calibration_split_strategy"):
+                    calibration_split_strategy = (
+                        tuner.tuner.searcher.calibration_split_strategy
+                    )
+                else:
+                    calibration_split_strategy = ""
+
                 if hasattr(sampler, "max_quantiles"):
                     sampler_n_quantiles = sampler.max_quantiles
                 elif hasattr(sampler, "n_quantiles"):
@@ -305,6 +312,7 @@ def process_single_experiment_config(
                 confidence_level = ""
                 estimator_architecture = ""
                 n_pre_conformal_trials = ""
+                calibration_split_strategy = ""
                 sampler_n_quantiles = ""
                 sampler_adapter = ""
                 tuner_searcher_tuning_framework = ""
@@ -347,6 +355,9 @@ def process_single_experiment_config(
             historical_performance[
                 "n_pre_conformal_trials"
             ] = n_pre_conformal_trials
+            historical_performance[
+                "calibration_split_strategy"
+            ] = calibration_split_strategy
             historical_performance["sampler_n_quantiles"] = sampler_n_quantiles
             historical_performance["n_candidates"] = tuner.n_candidates
             historical_performance["sampler_adapter"] = sampler_adapter

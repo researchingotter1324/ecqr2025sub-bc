@@ -362,6 +362,7 @@ def analyze_main_benchmark(
     norm_iter_unit = schema.norm_iter_unit
     breach_col = schema.breach_col
     n_pre_conformal_trials_col = schema.n_pre_conformal_trials_col
+    calibration_split_strategy_col = schema.calibration_split_strategy_col
     n_quantiles_col = schema.sampler_n_quantiles_col
     n_candidates_col = schema.n_candidates_col
     searcher_tuning_framework_col = schema.tuner_searcher_tuning_framework_col
@@ -997,8 +998,20 @@ def analyze_main_benchmark(
                     n_bootstraps=n_bootstraps,
                 )
                 conformalization_results["plotting_identifier"] = (
-                    conformalization_results[n_pre_conformal_trials_col]
-                    .apply(lambda x: "Unconformalized" if x > 32 else "Conformalized + DtACI")
+                    conformalization_results.apply(
+                        lambda row: (
+                            "Unconformalized"
+                            if row[n_pre_conformal_trials_col] > 32
+                            else (
+                                "CV+ DtACI"
+                                if row[calibration_split_strategy_col] == "cv"
+                                else "SCP DtACI"
+                                if row[calibration_split_strategy_col] == "train_test_split"
+                                else row[calibration_split_strategy_col]
+                            )
+                        ),
+                        axis=1,
+                    )
                 )
                 plot_and_save(
                     data=conformalization_results,

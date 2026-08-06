@@ -217,36 +217,44 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS += build_architecture_variation_co
 
 
 PRECONFORMAL_ADAPTER = "DtACI"
+PRECONFORMAL_ARCHITECTURES = ["ql", "qgbm", "qleaf"]
+PRECONFORMAL_SAMPLERS = [
+    ThompsonSampler(
+        n_quantiles=TS_N_QUANTILES,
+        enable_optimistic_sampling=False,
+        adapter=PRECONFORMAL_ADAPTER,
+    ),
+    ExpectedImprovementSampler(
+        n_quantiles=EI_N_QUANTILES,
+        adapter=PRECONFORMAL_ADAPTER,
+        target_type="incumbent",
+        local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
+    ),
+]
+PRECONFORMAL_CALIBRATION_STRATEGIES = ["train_test_split", "cv"]
+
 PRECONFORMAL_COMPARISON_CONFIGURATIONS = []
-for architecture in [
-    "ql",
-    "qgbm",
-    "qleaf",
-]:
-    for pre_conformal_trials in [32, 10000]:
-        if pre_conformal_trials == 10000:
-            adapter = None
-        else:
-            adapter = PRECONFORMAL_ADAPTER
-        PRECONFORMAL_COMPARISON_CONFIGURATIONS.extend(
-            build_architecture_variation_configurations(
-                architectures=[architecture],
-                samplers=[
-        ThompsonSampler(
-            n_quantiles=TS_N_QUANTILES,
-            enable_optimistic_sampling=False,
-            adapter=PRECONFORMAL_ADAPTER,
-        ),
-        ExpectedImprovementSampler(
-            n_quantiles=EI_N_QUANTILES,
-            adapter=PRECONFORMAL_ADAPTER,
-            target_type="incumbent",
-            local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
-        ),
-                ],
-                n_pre_conformal_trials=pre_conformal_trials,
-            )
+
+for calibration_split_strategy in PRECONFORMAL_CALIBRATION_STRATEGIES:
+    PRECONFORMAL_COMPARISON_CONFIGURATIONS.extend(
+        build_architecture_variation_configurations(
+            architectures=PRECONFORMAL_ARCHITECTURES,
+            samplers=PRECONFORMAL_SAMPLERS,
+            n_pre_conformal_trials=32,
+            calibration_split_strategy=calibration_split_strategy,
+            searcher_tuning_framework=None,
         )
+    )
+
+PRECONFORMAL_COMPARISON_CONFIGURATIONS.extend(
+    build_architecture_variation_configurations(
+        architectures=PRECONFORMAL_ARCHITECTURES,
+        samplers=PRECONFORMAL_SAMPLERS,
+        n_pre_conformal_trials=10000,
+        calibration_split_strategy="train_test_split",
+        searcher_tuning_framework=None,
+    )
+)
 
 
 QUANTILE_COUNT_VARIATION_ADAPTER = "DtACI"

@@ -42,6 +42,7 @@ class BenchmarkDataProcessor:
             schema.tuner_searcher_tuning_framework_col
         )
         self.n_pre_conformal_trials = schema.n_pre_conformal_trials_col
+        self.calibration_split_strategy = schema.calibration_split_strategy_col
         self.runtime_unit = schema.runtime_unit
         self.iter_unit = schema.iter_unit
         self.breach_column = schema.breach_col
@@ -63,6 +64,7 @@ class BenchmarkDataProcessor:
             self.sampler_adapter,
             self.tuner_searcher_tuning_framework,
             self.n_pre_conformal_trials,
+            self.calibration_split_strategy,
         ]
         self.benchmark_and_data_cols = [self.bench_col, self.data_col]
         self.tuner_level = self.benchmark_and_data_cols + self.tuner_cols
@@ -84,6 +86,7 @@ class BenchmarkDataProcessor:
             self.sampler_adapter,
             self.tuner_searcher_tuning_framework,
             self.n_pre_conformal_trials,
+            self.calibration_split_strategy,
             self.runtime_unit,
             self.iter_unit,
             self.breach_column,
