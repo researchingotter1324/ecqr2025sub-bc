@@ -251,6 +251,22 @@ def is_non_local(legend_label: str) -> bool:
     return False
 
 
+def canonical_architecture_label(arch: str) -> str:
+    """Strip the non-local prefix so architectures share one color across samplers."""
+    arch = str(arch)
+    return arch[3:] if arch.startswith("NL-") else arch
+
+
+def joint_plot_sampler_label(sampler: str) -> str:
+    """Return a short sampler title for joint architecture plots."""
+    sampler = str(sampler)
+    if sampler.startswith("PLBS"):
+        return "PLBS"
+    if sampler.startswith("LBS"):
+        return "LBS"
+    return sampler
+
+
 def plot_tuner(
     ax: "plt.Axes",
     tuner_data: pd.DataFrame,
@@ -1057,6 +1073,8 @@ def plot_joint_architecture_and_static(
     analysis_type: str,
     subfolder: str,
     schema: BenchmarkDataSchema,
+    search_x_col: str,
+    search_x_col_label: str,
 ) -> None:
     """Plot joint analysis comparing architecture optimization ranks and estimator errors.
 
@@ -1066,6 +1084,10 @@ def plot_joint_architecture_and_static(
     estimator architecture for that sampler; the pinball-loss panel is shared
     across all samplers and shows lines per estimator architecture over training
     data size.
+
+    Args:
+        search_x_col: Column to use as the x-axis for search-rank panels.
+        search_x_col_label: X-axis label for search-rank panels.
     """
     path_manager = AnalysisPathManager(cache_path, run_start_str)
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
@@ -1080,7 +1102,12 @@ def plot_joint_architecture_and_static(
     n_sampler_cols = len(samplers)
     n_cols = n_sampler_cols + 1  # sampler columns + pinball-loss column
 
-    all_archs = sorted(main_processed_df[arch_col].unique())
+    all_archs = sorted(
+        {
+            canonical_architecture_label(arch)
+            for arch in main_processed_df[arch_col].unique()
+        }
+    )
     color_map = {
         arch: DEFAULT_COLOR_PALETTE[idx % len(DEFAULT_COLOR_PALETTE)]
         for idx, arch in enumerate(all_archs)
@@ -1096,6 +1123,7 @@ def plot_joint_architecture_and_static(
 
     legend_handles: list = []
     legend_labels: list = []
+    row_axis_groups: list[tuple[list, "plt.Axes"]] = []
 
     for i, row_value in enumerate(row_values):
         main_row_data = main_processed_df[main_processed_df[row_measure] == row_value]
@@ -1106,46 +1134,37 @@ def plot_joint_architecture_and_static(
             search_axes.append(ax_search)
             sampler_data = main_row_data[main_row_data[sampler_col] == sampler]
 
-            for arch in all_archs:
+            for arch in sorted(sampler_data[arch_col].unique()):
                 arch_data = sampler_data[sampler_data[arch_col] == arch]
                 if arch_data.empty:
                     continue
-                color = color_map[arch]
+                canon_arch = canonical_architecture_label(arch)
+                color = color_map[canon_arch]
                 line = ax_search.plot(
-                    arch_data[schema.norm_iter_unit],
+                    arch_data[search_x_col],
                     arch_data["rank"],
-                    label=arch,
+                    label=canon_arch,
                     alpha=0.8,
                     color=color,
                     marker=None,
                     markersize=4,
                 )[0]
-                if i == 0 and j == 0:
+                if i == 0 and j == 0 and canon_arch not in legend_labels:
                     legend_handles.append(line)
-                    legend_labels.append(arch)
+                    legend_labels.append(canon_arch)
                 if "rank_lower" in arch_data.columns and "rank_upper" in arch_data.columns:
                     ax_search.fill_between(
-                        arch_data[schema.norm_iter_unit],
+                        arch_data[search_x_col],
                         arch_data["rank_lower"],
                         arch_data["rank_upper"],
                         alpha=0.2,
                         color=color,
                     )
 
-            if j == 0:
-                ax_search.text(
-                    -0.18, 0.5, "(a)",
-                    transform=ax_search.transAxes,
-                    fontsize=16,
-                    fontweight="bold",
-                    ha="right",
-                    va="center",
-                )
-
-            ax_search.set_xlabel("Normalized Iteration Budget", fontsize=14)
+            ax_search.set_xlabel(search_x_col_label, fontsize=14)
             ax_search.set_ylabel("Search Rank", fontsize=14, labelpad=10)
             ax_search.set_title(
-                f"{sampler}",
+                joint_plot_sampler_label(sampler),
                 fontsize=14,
                 pad=20,
             )
@@ -1169,28 +1188,19 @@ def plot_joint_architecture_and_static(
         ax_static = fig.add_subplot(gs[i, n_sampler_cols])
         static_row_data = static_processed_df[static_processed_df[row_measure] == row_value]
 
-        for entity_idx, (entity, entity_data) in enumerate(
-            static_row_data.groupby(arch_col)
-        ):
-            color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
+        for arch in sorted(static_row_data[arch_col].unique()):
+            entity_data = static_row_data[static_row_data[arch_col] == arch]
+            canon_arch = canonical_architecture_label(arch)
+            color = color_map[canon_arch]
             ax_static.plot(
                 entity_data[schema.data_size_col],
                 entity_data["rank"],
-                label=entity,
+                label=canon_arch,
                 alpha=0.8,
                 color=color,
                 marker="o",
                 markersize=4,
             )
-
-        ax_static.text(
-            -0.18, 0.5, "(b)",
-            transform=ax_static.transAxes,
-            fontsize=16,
-            fontweight="bold",
-            ha="right",
-            va="center",
-        )
 
         ax_static.set_xlabel("Training Data Size", fontsize=14)
         ax_static.set_ylabel("Error Rank", fontsize=14, labelpad=10)
@@ -1200,6 +1210,8 @@ def plot_joint_architecture_and_static(
             ax_static.spines[spine].set_linewidth(1.2)
         ax_static.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
         ax_static.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
+
+        row_axis_groups.append((search_axes, ax_static))
 
     handles, labels = sort_legend_items(legend_handles, legend_labels)
     legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
@@ -1219,7 +1231,40 @@ def plot_joint_architecture_and_static(
             frameon=False,
         )
 
-    fig.subplots_adjust(wspace=0.25, hspace=0.22, bottom=legend_bottom_margin, top=0.90, left=0.09, right=0.98)
+    extra_left = 0.025 * max(0, n_sampler_cols - 2)
+    extra_wspace = 0.06 * max(0, n_sampler_cols - 2)
+    left_margin = 0.10 + extra_left
+    fig.subplots_adjust(
+        wspace=0.25 + extra_wspace,
+        hspace=0.22,
+        bottom=legend_bottom_margin,
+        top=0.90,
+        left=left_margin,
+        right=0.98,
+    )
+
+    for search_axes, ax_static in row_axis_groups:
+        first_pos = search_axes[0].get_position()
+        static_pos = ax_static.get_position()
+        panel_label_offset = 0.012 + 0.004 * max(0, n_sampler_cols - 2)
+        fig.text(
+            first_pos.x0 - panel_label_offset,
+            first_pos.y0 + first_pos.height / 2,
+            "(a)",
+            ha="right",
+            va="center",
+            fontsize=16,
+            fontweight="bold",
+        )
+        fig.text(
+            static_pos.x0 - panel_label_offset,
+            static_pos.y0 + static_pos.height / 2,
+            "(b)",
+            ha="right",
+            va="center",
+            fontsize=16,
+            fontweight="bold",
+        )
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     for fmt in PLOT_FORMATS:
@@ -1239,6 +1284,8 @@ def plot_ei_architecture_triplot(
     analysis_type: str,
     subfolder: str,
     schema: BenchmarkDataSchema,
+    search_x_col: str,
+    search_x_col_label: str,
 ) -> None:
     """Three-panel EI architecture figure: search ranks | ei_collapsed rate | perc_zero_ei.
 
@@ -1247,6 +1294,10 @@ def plot_ei_architecture_triplot(
     small values and sudden jumps are both readable.  Log-axis ticks are placed at
     every decade *and* at several intermediate sub-decade values, and are labelled
     explicitly to make the scale unambiguous.
+
+    Args:
+        search_x_col: Column to use as the x-axis for the search-rank panel.
+        search_x_col_label: X-axis label for the search-rank panel.
     """
     path_manager = AnalysisPathManager(cache_path, run_start_str)
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
@@ -1298,7 +1349,7 @@ def plot_ei_architecture_triplot(
                 continue
             color = color_map[arch]
             line = ax_search.plot(
-                arch_data[schema.norm_iter_unit],
+                arch_data[search_x_col],
                 arch_data["rank"],
                 label=arch,
                 alpha=0.85,
@@ -1309,14 +1360,14 @@ def plot_ei_architecture_triplot(
                 legend_labels.append(arch)
             if "rank_lower" in arch_data.columns and "rank_upper" in arch_data.columns:
                 ax_search.fill_between(
-                    arch_data[schema.norm_iter_unit],
+                    arch_data[search_x_col],
                     arch_data["rank_lower"],
                     arch_data["rank_upper"],
                     alpha=0.18,
                     color=color,
                 )
 
-        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=14)
+        ax_search.set_xlabel(search_x_col_label, fontsize=14)
         ax_search.set_ylabel("Rank", fontsize=14, labelpad=10)
         ax_search.set_title(f"Search Performance", fontsize=14, pad=20)
         ax_search.grid(True, linestyle="--", linewidth=0.5, alpha=0.7)
@@ -1422,13 +1473,19 @@ def plot_joint_candidates_and_extreme_quantile(
     analysis_type: str,
     subfolder: str,
     schema: BenchmarkDataSchema,
+    search_x_col: str,
+    search_x_col_label: str,
 ) -> None:
     """Plot joint analysis of candidate-count search ranks and extreme-quantile usage.
 
     Produces a two-panel figure (one row per benchmark) for a single estimator
     architecture and sampler, with one line per number-of-candidates value:
-    - Left panel: search performance rank over the normalized iteration budget.
+    - Left panel: search performance rank over the normalized budget.
     - Right panel: percentage of trials acquired via the lowest (extreme) quantile bound.
+
+    Args:
+        search_x_col: Column for the x-axis of the search-rank panel.
+        search_x_col_label: X-axis label for the search-rank panel.
     """
     path_manager = AnalysisPathManager(cache_path, run_start_str)
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
@@ -1476,7 +1533,7 @@ def plot_joint_candidates_and_extreme_quantile(
                 continue
             color = color_map[identifier]
             line = ax_search.plot(
-                entity_data[schema.norm_iter_unit],
+                entity_data[search_x_col],
                 entity_data["rank"],
                 label=identifier,
                 alpha=0.8,
@@ -1492,14 +1549,14 @@ def plot_joint_candidates_and_extreme_quantile(
                 and "rank_upper" in entity_data.columns
             ):
                 ax_search.fill_between(
-                    entity_data[schema.norm_iter_unit],
+                    entity_data[search_x_col],
                     entity_data["rank_lower"],
                     entity_data["rank_upper"],
                     alpha=0.2,
                     color=color,
                 )
 
-        ax_search.set_xlabel("Normalized Iteration Budget", fontsize=14)
+        ax_search.set_xlabel(search_x_col_label, fontsize=14)
         ax_search.set_ylabel("Rank", fontsize=14, labelpad=10)
         ax_search.set_title(f"Search Performance", fontsize=14, pad=20)
         ax_search.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)

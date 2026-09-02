@@ -171,6 +171,7 @@ def plot_cd_diagram(
     filename_suffix: str,
     is_global: bool = False,
     cd_budget: int = 100,
+    subfolder: str = "rank_analysis",
 ) -> None:
     """Helper function to plot CD diagram for a single result set.
 
@@ -216,7 +217,7 @@ def plot_cd_diagram(
         run_start_str=run_start_str,
         filename_prefix=filename_prefix,
         analysis_type=analysis_type,
-        subfolder="rank_analysis",
+        subfolder=subfolder,
         row_measure=bench_col,
         cd_budget=cd_budget,
         alpha=alpha,
@@ -625,30 +626,85 @@ def analyze_main_benchmark(
         )
 
     if "dataset_performances" in analysis_components:
-        for benchmark in dataset_absolute_iterative_results[bench_col].unique():
-            bench_slice = dataset_absolute_iterative_results[
-                dataset_absolute_iterative_results[bench_col] == benchmark
+        for benchmark in dataset_relative_iterative_results[bench_col].unique():
+            bench_slice_iter = dataset_relative_iterative_results[
+                dataset_relative_iterative_results[bench_col] == benchmark
             ]
             plot_and_save(
-                data=bench_slice,
-                x_col=iter_unit,
+                data=bench_slice_iter,
+                x_col=norm_iter_unit,
                 y_cols=["best_performance", "rank"],
                 entity_col=tuner_col,
                 col_measure=data_col,
                 row_measure=bench_col,
                 cache_path=cache_path,
                 run_start_str=run_start_str,
-                filename_prefix=f"perf_vs_iter__{benchmark}",
+                filename_prefix=f"perf_vs_norm_iter__{benchmark}",
                 analysis_type=analysis_type,
-                subfolder="dataset_performances",
+                subfolder="dataset_performances/by_iteration",
                 y_cols_lower=None,
                 y_cols_upper=None,
                 share_y_axis=False,
                 hide_col_and_row_labels=False,
+                x_label="% Budget Used",
+            )
+        for benchmark in dataset_relative_runtime_results[bench_col].unique():
+            bench_slice_rt = dataset_relative_runtime_results[
+                dataset_relative_runtime_results[bench_col] == benchmark
+            ]
+            plot_and_save(
+                data=bench_slice_rt,
+                x_col=norm_runtime_unit,
+                y_cols=["best_performance", "rank"],
+                entity_col=tuner_col,
+                col_measure=data_col,
+                row_measure=bench_col,
+                cache_path=cache_path,
+                run_start_str=run_start_str,
+                filename_prefix=f"perf_vs_norm_runtime__{benchmark}",
+                analysis_type=analysis_type,
+                subfolder="dataset_performances/by_runtime",
+                y_cols_lower=None,
+                y_cols_upper=None,
+                share_y_axis=False,
+                hide_col_and_row_labels=False,
+                x_label="% Budget Used",
             )
 
     if "rank_analysis" in analysis_components:
-        bench_relative_runtime_results_filled_bounds = bench_relative_runtime_results
+        bench_relative_iterative_results_filled_bounds = bench_relative_iterative_results.copy()
+        bench_relative_iterative_results_filled_bounds["rank_lower"] = (
+            bench_relative_iterative_results_filled_bounds["rank_lower"].fillna(
+                bench_relative_iterative_results_filled_bounds["rank"]
+            )
+        )
+        bench_relative_iterative_results_filled_bounds = (
+            create_default_plotting_identifier(
+                df=bench_relative_iterative_results_filled_bounds,
+                tuner_col=tuner_col,
+                estimator_architecture_col=estimator_architecture_col,
+                sampler_col=sampler_col,
+            )
+        )
+        plot_and_save(
+            data=bench_relative_iterative_results_filled_bounds,
+            x_col=norm_iter_unit,
+            y_cols=["rank"],
+            entity_col="plotting_identifier",
+            col_measure=bench_col,
+            row_measure=None,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix="rank_vs_norm_iteration",
+            analysis_type=analysis_type,
+            subfolder="rank_analysis/by_iteration",
+            y_cols_lower=["rank_lower"],
+            y_cols_upper=["rank_upper"],
+            share_y_axis=False,
+            x_label="% Budget Used",
+        )
+
+        bench_relative_runtime_results_filled_bounds = bench_relative_runtime_results.copy()
         bench_relative_runtime_results_filled_bounds["rank_lower"] = (
             bench_relative_runtime_results_filled_bounds["rank_lower"].fillna(
                 bench_relative_runtime_results_filled_bounds["rank"]
@@ -673,52 +729,21 @@ def analyze_main_benchmark(
             run_start_str=run_start_str,
             filename_prefix="rank_vs_norm_runtime",
             analysis_type=analysis_type,
-            subfolder="rank_analysis",
-            y_cols_lower=["rank_lower"],
-            y_cols_upper=["rank_upper"],
-            share_y_axis=False,
-            x_label="% Budget Used",
-        )
-        bench_relative_iterative_results_filled_bounds = bench_relative_iterative_results
-        bench_relative_iterative_results_filled_bounds["rank_lower"] = (
-            bench_relative_iterative_results_filled_bounds["rank_lower"].fillna(
-                bench_relative_iterative_results_filled_bounds["rank"]
-            )
-        )
-        bench_relative_iterative_results_filled_bounds = (
-            create_default_plotting_identifier(
-                df=bench_relative_iterative_results_filled_bounds,
-                tuner_col=tuner_col,
-                estimator_architecture_col=estimator_architecture_col,
-                sampler_col=sampler_col,
-            )
-        )
-        plot_and_save(
-            data=bench_relative_iterative_results_filled_bounds,
-            x_col=norm_iter_unit,
-            y_cols=["rank"],
-            entity_col="plotting_identifier",
-            col_measure=bench_col,
-            row_measure=None,
-            cache_path=cache_path,
-            run_start_str=run_start_str,
-            filename_prefix="rank_vs_iteration",
-            analysis_type=analysis_type,
-            subfolder="rank_analysis",
+            subfolder="rank_analysis/by_runtime",
             y_cols_lower=["rank_lower"],
             y_cols_upper=["rank_upper"],
             share_y_axis=False,
             x_label="% Budget Used",
         )
 
-        global_bench_relative_iterative_results = create_default_plotting_identifier(
+        global_bench_relative_iterative_results_with_id = create_default_plotting_identifier(
             df=global_bench_relative_iterative_results,
             tuner_col=tuner_col,
             estimator_architecture_col=estimator_architecture_col,
             sampler_col=sampler_col,
         )
         plot_and_save(
-            data=global_bench_relative_iterative_results,
+            data=global_bench_relative_iterative_results_with_id,
             x_col=norm_iter_unit,
             y_cols=["rank"],
             entity_col="plotting_identifier",
@@ -728,7 +753,31 @@ def analyze_main_benchmark(
             run_start_str=run_start_str,
             filename_prefix="global_rank_vs_norm_iteration",
             analysis_type=analysis_type,
-            subfolder="rank_analysis",
+            subfolder="rank_analysis/by_iteration",
+            y_cols_lower=None,
+            y_cols_upper=None,
+            share_y_axis=False,
+            x_label="% Budget Used",
+        )
+
+        global_bench_relative_runtime_results_with_id = create_default_plotting_identifier(
+            df=global_bench_relative_runtime_results,
+            tuner_col=tuner_col,
+            estimator_architecture_col=estimator_architecture_col,
+            sampler_col=sampler_col,
+        )
+        plot_and_save(
+            data=global_bench_relative_runtime_results_with_id,
+            x_col=norm_runtime_unit,
+            y_cols=["rank"],
+            entity_col="plotting_identifier",
+            col_measure=bench_col,
+            row_measure=None,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix="global_rank_vs_norm_runtime",
+            analysis_type=analysis_type,
+            subfolder="rank_analysis/by_runtime",
             y_cols_lower=None,
             y_cols_upper=None,
             share_y_axis=False,
@@ -746,9 +795,9 @@ def analyze_main_benchmark(
             data_col=data_col,
         )
         if grouped_benchmark_data is not None:
-            for budget_unit, norm_unit, filename_suffix in [
-                (runtime_unit, norm_runtime_unit, "norm_runtime"),
-                (iter_unit, norm_iter_unit, "norm_iteration"),
+            for budget_unit, norm_unit, filename_suffix, subfolder_suffix in [
+                (iter_unit, norm_iter_unit, "norm_iteration", "by_iteration"),
+                (runtime_unit, norm_runtime_unit, "norm_runtime", "by_runtime"),
             ]:
                 grouped_results = processor.process_performance_records(
                     raw_benchmark_data=grouped_benchmark_data,
@@ -779,87 +828,14 @@ def analyze_main_benchmark(
                     run_start_str=run_start_str,
                     filename_prefix=f"grouped_rank_vs_{filename_suffix}",
                     analysis_type=analysis_type,
-                    subfolder="rank_analysis",
+                    subfolder=f"rank_analysis/{subfolder_suffix}",
                     y_cols_lower=["rank_lower"],
                     y_cols_upper=["rank_upper"],
                     share_y_axis=False,
                     x_label="% Budget Used",
                 )
 
-        significance_results_for_cd = compute_significance_results(
-            benchmark_data=dataset_relative_runtime_results,
-            norm_unit=norm_runtime_unit,
-            tuner_col=tuner_col,
-            estimator_architecture_col=estimator_architecture_col,
-            sampler_col=sampler_col,
-            analysis_components=analysis_components,
-            cd_significance_method=cd_significance_method,
-            bench_col=bench_col,
-            data_col=data_col,
-            alpha=alpha,
-            cache_path=cache_path,
-            run_start_str=run_start_str,
-            analysis_type=analysis_type,
-            correction_method=correction_method,
-            filename_prefix="runtime_",
-            is_global=False,
-        )
-
-        global_significance_results_for_cd = compute_significance_results(
-            benchmark_data=global_dataset_relative_runtime_results,
-            norm_unit=norm_runtime_unit,
-            tuner_col=tuner_col,
-            estimator_architecture_col=estimator_architecture_col,
-            sampler_col=sampler_col,
-            analysis_components=analysis_components,
-            cd_significance_method="wilcoxon",
-            bench_col=bench_col,
-            data_col=data_col,
-            alpha=alpha,
-            cache_path=cache_path,
-            run_start_str=run_start_str,
-            analysis_type=analysis_type,
-            correction_method=correction_method,
-            filename_prefix="runtime_",
-            is_global=True,
-        )
-
         cd_budget = 100
-
-        if cd_significance_method in analysis_components:
-            plot_cd_diagram(
-                benchmark_data=bench_relative_runtime_results,
-                significance_results=significance_results_for_cd,
-                norm_unit=norm_runtime_unit,
-                tuner_col=tuner_col,
-                estimator_architecture_col=estimator_architecture_col,
-                sampler_col=sampler_col,
-                bench_col=bench_col,
-                alpha=alpha,
-                cache_path=cache_path,
-                run_start_str=run_start_str,
-                analysis_type=analysis_type,
-                filename_suffix="runtime",
-                is_global=False,
-                cd_budget=cd_budget,
-            )
-
-        plot_cd_diagram(
-            benchmark_data=global_bench_relative_runtime_results,
-            significance_results=global_significance_results_for_cd,
-            norm_unit=norm_runtime_unit,
-            tuner_col=tuner_col,
-            estimator_architecture_col=estimator_architecture_col,
-            sampler_col=sampler_col,
-            bench_col=bench_col,
-            alpha=alpha,
-            cache_path=cache_path,
-            run_start_str=run_start_str,
-            analysis_type=analysis_type,
-            filename_suffix="runtime",
-            is_global=True,
-            cd_budget=cd_budget,
-        )
 
         significance_results_for_cd_iterative = compute_significance_results(
             benchmark_data=dataset_relative_iterative_results,
@@ -915,6 +891,7 @@ def analyze_main_benchmark(
                 filename_suffix="iterative",
                 is_global=False,
                 cd_budget=cd_budget,
+                subfolder="rank_analysis/by_iteration",
             )
 
         plot_cd_diagram(
@@ -932,12 +909,88 @@ def analyze_main_benchmark(
             filename_suffix="iterative",
             is_global=True,
             cd_budget=cd_budget,
+            subfolder="rank_analysis/by_iteration",
+        )
+
+        significance_results_for_cd = compute_significance_results(
+            benchmark_data=dataset_relative_runtime_results,
+            norm_unit=norm_runtime_unit,
+            tuner_col=tuner_col,
+            estimator_architecture_col=estimator_architecture_col,
+            sampler_col=sampler_col,
+            analysis_components=analysis_components,
+            cd_significance_method=cd_significance_method,
+            bench_col=bench_col,
+            data_col=data_col,
+            alpha=alpha,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            analysis_type=analysis_type,
+            correction_method=correction_method,
+            filename_prefix="runtime_",
+            is_global=False,
+        )
+
+        global_significance_results_for_cd = compute_significance_results(
+            benchmark_data=global_dataset_relative_runtime_results,
+            norm_unit=norm_runtime_unit,
+            tuner_col=tuner_col,
+            estimator_architecture_col=estimator_architecture_col,
+            sampler_col=sampler_col,
+            analysis_components=analysis_components,
+            cd_significance_method="wilcoxon",
+            bench_col=bench_col,
+            data_col=data_col,
+            alpha=alpha,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            analysis_type=analysis_type,
+            correction_method=correction_method,
+            filename_prefix="runtime_",
+            is_global=True,
+        )
+
+        if cd_significance_method in analysis_components:
+            plot_cd_diagram(
+                benchmark_data=bench_relative_runtime_results,
+                significance_results=significance_results_for_cd,
+                norm_unit=norm_runtime_unit,
+                tuner_col=tuner_col,
+                estimator_architecture_col=estimator_architecture_col,
+                sampler_col=sampler_col,
+                bench_col=bench_col,
+                alpha=alpha,
+                cache_path=cache_path,
+                run_start_str=run_start_str,
+                analysis_type=analysis_type,
+                filename_suffix="runtime",
+                is_global=False,
+                cd_budget=cd_budget,
+                subfolder="rank_analysis/by_runtime",
+            )
+
+        plot_cd_diagram(
+            benchmark_data=global_bench_relative_runtime_results,
+            significance_results=global_significance_results_for_cd,
+            norm_unit=norm_runtime_unit,
+            tuner_col=tuner_col,
+            estimator_architecture_col=estimator_architecture_col,
+            sampler_col=sampler_col,
+            bench_col=bench_col,
+            alpha=alpha,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            analysis_type=analysis_type,
+            filename_suffix="runtime",
+            is_global=True,
+            cd_budget=cd_budget,
+            subfolder="rank_analysis/by_runtime",
         )
 
     if "sampler_comparison" in analysis_components:
-        for dataset, x_col in [
-            (bench_relative_runtime_results, norm_runtime_unit),
-            (bench_relative_iterative_results, norm_iter_unit),
+        for dataset, x_col, subfolder_suffix in [
+            (bench_relative_iterative_results, norm_iter_unit, "by_iteration"),
+            (bench_relative_runtime_results, norm_runtime_unit, "by_runtime"),
         ]:
             dataset_with_id = dataset.copy()
             dataset_with_id["plotting_identifier"] = dataset_with_id[estimator_architecture_col]
@@ -952,7 +1005,7 @@ def analyze_main_benchmark(
                 run_start_str=run_start_str,
                 filename_prefix=f"sampler_partitioned_perf_vs_{x_col}",
                 analysis_type=analysis_type,
-                subfolder="sampler_comparison",
+                subfolder=f"sampler_comparison/{subfolder_suffix}",
                 y_cols_lower=["rank_lower"],
                 y_cols_upper=["rank_upper"],
                 share_y_axis=True,
@@ -960,9 +1013,9 @@ def analyze_main_benchmark(
             )
 
     if "architecture_comparison" in analysis_components:
-        for dataset, x_col in [
-            (bench_relative_runtime_results, norm_runtime_unit),
-            (bench_relative_iterative_results, norm_iter_unit),
+        for dataset, x_col, subfolder_suffix in [
+            (bench_relative_iterative_results, norm_iter_unit, "by_iteration"),
+            (bench_relative_runtime_results, norm_runtime_unit, "by_runtime"),
         ]:
             dataset_with_id = dataset.copy()
             dataset_with_id["plotting_identifier"] = dataset_with_id[sampler_col]
@@ -977,7 +1030,7 @@ def analyze_main_benchmark(
                 run_start_str=run_start_str,
                 filename_prefix=f"architecture_partitioned_perf_vs_{x_col}",
                 analysis_type=analysis_type,
-                subfolder="architecture_comparison",
+                subfolder=f"architecture_comparison/{subfolder_suffix}",
                 y_cols_lower=["rank_lower"],
                 y_cols_upper=["rank_upper"],
                 share_y_axis=True,
@@ -987,7 +1040,10 @@ def analyze_main_benchmark(
     if "conformalization_effect" in analysis_components:
         for benchmark in benchmark_data[bench_col].unique():
             bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
-            for budget_unit in [runtime_unit, iter_unit]:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
                 conformalization_results = processor.process_performance_records(
                     raw_benchmark_data=bench_slice,
                     budget_unit=budget_unit,
@@ -1024,7 +1080,7 @@ def analyze_main_benchmark(
                     run_start_str=run_start_str,
                     filename_prefix=f"perf_vs_{budget_unit}_n_pre_conformal_trials__{benchmark}",
                     analysis_type=analysis_type,
-                    subfolder="conformalization_effect",
+                    subfolder=f"conformalization_effect/{subfolder_suffix}",
                     y_cols_lower=["rank_lower"],
                     y_cols_upper=["rank_upper"],
                     share_y_axis=False,
@@ -1051,7 +1107,82 @@ def analyze_main_benchmark(
                     run_start_str=run_start_str,
                     filename_prefix=f"perf_vs_{budget_unit}_n_pre_conformal_trials__{benchmark}_{spinoff_architecture}_only",
                     analysis_type=analysis_type,
-                    subfolder="conformalization_effect",
+                    subfolder=f"conformalization_effect/{subfolder_suffix}",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+
+        if benchmark_data[bench_col].nunique() > 1:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
+                global_conformalization_results = processor.process_performance_records(
+                    raw_benchmark_data=global_benchmark_data,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col, sampler_col],
+                    n_bootstraps=n_bootstraps,
+                )
+                global_conformalization_results["plotting_identifier"] = (
+                    global_conformalization_results.apply(
+                        lambda row: (
+                            "Unconformalized"
+                            if row[n_pre_conformal_trials_col] > 32
+                            else (
+                                "CV+ DtACI"
+                                if row[calibration_split_strategy_col] == "cv"
+                                else "SCP DtACI"
+                                if row[calibration_split_strategy_col] == "train_test_split"
+                                else row[calibration_split_strategy_col]
+                            )
+                        ),
+                        axis=1,
+                    )
+                )
+                global_label = global_benchmark_data[bench_col].iloc[0]
+                plot_and_save(
+                    data=global_conformalization_results,
+                    x_col=f"normalized_{budget_unit}",
+                    y_cols=["rank"],
+                    entity_col="plotting_identifier",
+                    col_measure=sampler_col,
+                    row_measure=estimator_architecture_col,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"perf_vs_{budget_unit}_n_pre_conformal_trials__global",
+                    analysis_type=analysis_type,
+                    subfolder=f"conformalization_effect/{subfolder_suffix}",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+                global_available_architectures = global_conformalization_results[estimator_architecture_col].unique()
+                global_spinoff_architecture = (
+                    "QGBM"
+                    if "QGBM" in global_available_architectures
+                    else global_available_architectures[0]
+                )
+                global_conformalization_results_single_arch = global_conformalization_results[
+                    global_conformalization_results[estimator_architecture_col] == global_spinoff_architecture
+                ]
+                plot_and_save(
+                    data=global_conformalization_results_single_arch,
+                    x_col=f"normalized_{budget_unit}",
+                    y_cols=["rank"],
+                    entity_col="plotting_identifier",
+                    col_measure=sampler_col,
+                    row_measure=estimator_architecture_col,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"perf_vs_{budget_unit}_n_pre_conformal_trials__global_{global_spinoff_architecture}_only",
+                    analysis_type=analysis_type,
+                    subfolder=f"conformalization_effect/{subfolder_suffix}",
                     y_cols_lower=["rank_lower"],
                     y_cols_upper=["rank_upper"],
                     share_y_axis=False,
@@ -1061,7 +1192,10 @@ def analyze_main_benchmark(
     if "quantile_count_comparison" in analysis_components:
         for benchmark in benchmark_data[bench_col].unique():
             bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
-            for budget_unit in [runtime_unit, iter_unit]:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
                 quantile_count_results = processor.process_performance_records(
                     raw_benchmark_data=bench_slice,
                     budget_unit=budget_unit,
@@ -1086,7 +1220,43 @@ def analyze_main_benchmark(
                     run_start_str=run_start_str,
                     filename_prefix=f"perf_vs_{budget_unit}_quantile_count_variation__{benchmark}",
                     analysis_type=analysis_type,
-                    subfolder="quantile_count_comparison",
+                    subfolder=f"quantile_count_comparison/{subfolder_suffix}",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+
+        if benchmark_data[bench_col].nunique() > 1:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
+                global_quantile_count_results = processor.process_performance_records(
+                    raw_benchmark_data=global_benchmark_data,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col, sampler_col],
+                    n_bootstraps=n_bootstraps,
+                )
+                global_quantile_count_results["plotting_identifier"] = (
+                    global_quantile_count_results[n_quantiles_col]
+                    .apply(lambda x: f"{int(x)} Quantiles")
+                )
+                plot_and_save(
+                    data=global_quantile_count_results,
+                    x_col=f"normalized_{budget_unit}",
+                    y_cols=["rank"],
+                    entity_col="plotting_identifier",
+                    col_measure=sampler_col,
+                    row_measure=estimator_architecture_col,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"perf_vs_{budget_unit}_quantile_count_variation__global",
+                    analysis_type=analysis_type,
+                    subfolder=f"quantile_count_comparison/{subfolder_suffix}",
                     y_cols_lower=["rank_lower"],
                     y_cols_upper=["rank_upper"],
                     share_y_axis=False,
@@ -1100,7 +1270,10 @@ def analyze_main_benchmark(
             )
         for benchmark in benchmark_data[bench_col].unique():
             bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
-            for budget_unit in [runtime_unit, iter_unit]:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
                 search_tuning_results = processor.process_performance_records(
                     raw_benchmark_data=bench_slice,
                     budget_unit=budget_unit,
@@ -1121,7 +1294,39 @@ def analyze_main_benchmark(
                     run_start_str=run_start_str,
                     filename_prefix=f"perf_vs_{budget_unit}_search_tuning_effect__{benchmark}",
                     analysis_type=analysis_type,
-                    subfolder="search_tuning_effect_comparison",
+                    subfolder=f"search_tuning_effect_comparison/{subfolder_suffix}",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+
+        if benchmark_data[bench_col].nunique() > 1:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
+                global_search_tuning_results = processor.process_performance_records(
+                    raw_benchmark_data=global_benchmark_data,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col],
+                    n_bootstraps=n_bootstraps,
+                )
+                plot_and_save(
+                    data=global_search_tuning_results,
+                    x_col=f"normalized_{budget_unit}",
+                    y_cols=["rank"],
+                    entity_col=searcher_tuning_framework_col,
+                    col_measure=estimator_architecture_col,
+                    row_measure=bench_col,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"perf_vs_{budget_unit}_search_tuning_effect__global",
+                    analysis_type=analysis_type,
+                    subfolder=f"search_tuning_effect_comparison/{subfolder_suffix}",
                     y_cols_lower=["rank_lower"],
                     y_cols_upper=["rank_upper"],
                     share_y_axis=False,
@@ -1135,7 +1340,10 @@ def analyze_main_benchmark(
             )
         for benchmark in benchmark_data[bench_col].unique():
             bench_slice = benchmark_data[benchmark_data[bench_col] == benchmark]
-            for budget_unit in [runtime_unit, iter_unit]:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
                 num_candidates_results = processor.process_performance_records(
                     raw_benchmark_data=bench_slice,
                     budget_unit=budget_unit,
@@ -1160,7 +1368,43 @@ def analyze_main_benchmark(
                     run_start_str=run_start_str,
                     filename_prefix=f"perf_vs_{budget_unit}_num_candidates_variation__{benchmark}",
                     analysis_type=analysis_type,
-                    subfolder="num_candidates_comparison",
+                    subfolder=f"num_candidates_comparison/{subfolder_suffix}",
+                    y_cols_lower=["rank_lower"],
+                    y_cols_upper=["rank_upper"],
+                    share_y_axis=False,
+                    x_label="% Budget Used",
+                )
+
+        if benchmark_data[bench_col].nunique() > 1:
+            for budget_unit, subfolder_suffix in [
+                (iter_unit, "by_iteration"),
+                (runtime_unit, "by_runtime"),
+            ]:
+                global_num_candidates_results = processor.process_performance_records(
+                    raw_benchmark_data=global_benchmark_data,
+                    budget_unit=budget_unit,
+                    relativize_budget=True,
+                    collapse_repetitions=True,
+                    collapse_datasets=True,
+                    extra_ranking_cols=[estimator_architecture_col, sampler_col],
+                    n_bootstraps=n_bootstraps,
+                )
+                global_num_candidates_results["plotting_identifier"] = (
+                    global_num_candidates_results[n_candidates_col]
+                    .apply(lambda x: f"{int(x)} Candidates")
+                )
+                plot_and_save(
+                    data=global_num_candidates_results,
+                    x_col=f"normalized_{budget_unit}",
+                    y_cols=["rank"],
+                    entity_col="plotting_identifier",
+                    col_measure=estimator_architecture_col,
+                    row_measure=sampler_col,
+                    cache_path=cache_path,
+                    run_start_str=run_start_str,
+                    filename_prefix=f"perf_vs_{budget_unit}_num_candidates_variation__global",
+                    analysis_type=analysis_type,
+                    subfolder=f"num_candidates_comparison/{subfolder_suffix}",
                     y_cols_lower=["rank_lower"],
                     y_cols_upper=["rank_upper"],
                     share_y_axis=False,
@@ -1370,15 +1614,25 @@ def analyze_joint_architecture_and_static(
     analysis_type: str,
     schema: BenchmarkDataSchema,
 ) -> None:
-    """Process both main architecture variation and static benchmarks, then plot jointly.
+    """Process combined benchmark data and static benchmarks, then plot jointly.
 
-    Computes per-sampler search-performance ranks so that the plot can render
-    one search-rank panel per sampler alongside a single pinball-loss panel.
+    Search and static data are pooled across all benchmarks (dataset IDs are
+    prefixed with their benchmark name) so that final plots show one combined row.
+    Produces plots for both normalized iteration and normalized runtime x-axes.
     """
     processor = BenchmarkDataProcessor(schema=schema)
 
-    bench_relative_iterative_results = processor.process_performance_records(
-        raw_benchmark_data=main_raw_data,
+    global_main_raw = main_raw_data.copy()
+    global_main_raw[schema.data_col] = (
+        global_main_raw[schema.bench_col] + "_" + global_main_raw[schema.data_col]
+    )
+    global_combined_label = " + ".join(
+        sorted(global_main_raw[schema.bench_col].unique())
+    )
+    global_main_raw[schema.bench_col] = global_combined_label
+
+    global_iter_results = processor.process_performance_records(
+        raw_benchmark_data=global_main_raw,
         budget_unit=schema.iter_unit,
         relativize_budget=True,
         collapse_repetitions=True,
@@ -1386,20 +1640,53 @@ def analyze_joint_architecture_and_static(
         extra_ranking_cols=[schema.sampler_col],
         n_bootstraps=1000,
     )
-
-    bench_relative_iterative_results["rank_lower"] = bench_relative_iterative_results["rank_lower"].fillna(bench_relative_iterative_results["rank"])
-    bench_relative_iterative_results["rank_upper"] = bench_relative_iterative_results["rank_upper"].fillna(bench_relative_iterative_results["rank"])
+    global_iter_results["rank_lower"] = global_iter_results["rank_lower"].fillna(
+        global_iter_results["rank"]
+    )
+    global_iter_results["rank_upper"] = global_iter_results["rank_upper"].fillna(
+        global_iter_results["rank"]
+    )
 
     save_analysis_results(
-        df=bench_relative_iterative_results,
+        df=global_iter_results,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename="joint_search_performance_results.csv",
+        filename="joint_search_performance_iterative_results.csv",
         analysis_type=analysis_type,
     )
 
-    non_tuned_results_df = static_raw_data[
-        static_raw_data[schema.tuning_iterations_col] == 0
+    global_runtime_results = processor.process_performance_records(
+        raw_benchmark_data=global_main_raw,
+        budget_unit=schema.runtime_unit,
+        relativize_budget=True,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=[schema.sampler_col],
+        n_bootstraps=1000,
+    )
+    global_runtime_results["rank_lower"] = global_runtime_results["rank_lower"].fillna(
+        global_runtime_results["rank"]
+    )
+    global_runtime_results["rank_upper"] = global_runtime_results["rank_upper"].fillna(
+        global_runtime_results["rank"]
+    )
+
+    save_analysis_results(
+        df=global_runtime_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="joint_search_performance_runtime_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    global_static_raw = static_raw_data.copy()
+    global_static_raw[schema.data_col] = (
+        global_static_raw[schema.bench_col] + "_" + global_static_raw[schema.data_col]
+    )
+    global_static_raw[schema.bench_col] = global_combined_label
+
+    non_tuned_results_df = global_static_raw[
+        global_static_raw[schema.tuning_iterations_col] == 0
     ]
 
     filtered_static_df = rank_and_collapse_data(
@@ -1435,14 +1722,29 @@ def analyze_joint_architecture_and_static(
     )
 
     plot_joint_architecture_and_static(
-        main_processed_df=bench_relative_iterative_results,
+        main_processed_df=global_iter_results,
         static_processed_df=aggregated_static_df,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename_prefix="joint_architecture_and_static",
+        filename_prefix="joint_architecture_and_static_by_iteration",
         analysis_type=analysis_type,
-        subfolder="joint_analysis",
+        subfolder="joint_analysis/by_iteration",
         schema=schema,
+        search_x_col=schema.norm_iter_unit,
+        search_x_col_label="% Budget Used",
+    )
+
+    plot_joint_architecture_and_static(
+        main_processed_df=global_runtime_results,
+        static_processed_df=aggregated_static_df,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename_prefix="joint_architecture_and_static_by_runtime",
+        analysis_type=analysis_type,
+        subfolder="joint_analysis/by_runtime",
+        schema=schema,
+        search_x_col=schema.norm_runtime_unit,
+        search_x_col_label="% Budget Used",
     )
 
 
@@ -1492,8 +1794,9 @@ def analyze_joint_candidates_and_extreme_quantile(
 
     processor = BenchmarkDataProcessor(schema=schema)
     iter_unit = schema.iter_unit
+    runtime_unit = schema.runtime_unit
 
-    search_performance_results = processor.process_performance_records(
+    search_performance_iter_results = processor.process_performance_records(
         raw_benchmark_data=raw_benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=True,
@@ -1502,21 +1805,48 @@ def analyze_joint_candidates_and_extreme_quantile(
         extra_ranking_cols=[estimator_architecture_col, sampler_col],
         n_bootstraps=n_bootstraps,
     )
-    search_performance_results["rank_lower"] = search_performance_results[
+    search_performance_iter_results["rank_lower"] = search_performance_iter_results[
         "rank_lower"
-    ].fillna(search_performance_results["rank"])
-    search_performance_results["rank_upper"] = search_performance_results[
+    ].fillna(search_performance_iter_results["rank"])
+    search_performance_iter_results["rank_upper"] = search_performance_iter_results[
         "rank_upper"
-    ].fillna(search_performance_results["rank"])
-    search_performance_results["plotting_identifier"] = search_performance_results[
+    ].fillna(search_performance_iter_results["rank"])
+    search_performance_iter_results["plotting_identifier"] = search_performance_iter_results[
         n_candidates_col
     ].apply(lambda x: f"{int(x)} Candidates")
 
     save_analysis_results(
-        df=search_performance_results,
+        df=search_performance_iter_results,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename="joint_candidates_search_performance_results.csv",
+        filename="joint_candidates_search_performance_iterative_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    search_performance_runtime_results = processor.process_performance_records(
+        raw_benchmark_data=raw_benchmark_data,
+        budget_unit=runtime_unit,
+        relativize_budget=True,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=[estimator_architecture_col, sampler_col],
+        n_bootstraps=n_bootstraps,
+    )
+    search_performance_runtime_results["rank_lower"] = search_performance_runtime_results[
+        "rank_lower"
+    ].fillna(search_performance_runtime_results["rank"])
+    search_performance_runtime_results["rank_upper"] = search_performance_runtime_results[
+        "rank_upper"
+    ].fillna(search_performance_runtime_results["rank"])
+    search_performance_runtime_results["plotting_identifier"] = search_performance_runtime_results[
+        n_candidates_col
+    ].apply(lambda x: f"{int(x)} Candidates")
+
+    save_analysis_results(
+        df=search_performance_runtime_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="joint_candidates_search_performance_runtime_results.csv",
         analysis_type=analysis_type,
     )
 
@@ -1542,15 +1872,108 @@ def analyze_joint_candidates_and_extreme_quantile(
     )
 
     plot_joint_candidates_and_extreme_quantile(
-        search_performance_df=search_performance_results,
+        search_performance_df=search_performance_iter_results,
         extreme_quantile_df=extreme_quantile_results,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename_prefix="joint_candidates_and_extreme_quantile",
+        filename_prefix="joint_candidates_and_extreme_quantile_by_iteration",
         analysis_type=analysis_type,
-        subfolder="joint_candidates_analysis",
+        subfolder="joint_candidates_analysis/by_iteration",
         schema=schema,
+        search_x_col=schema.norm_iter_unit,
+        search_x_col_label="% Budget Used",
     )
+
+    plot_joint_candidates_and_extreme_quantile(
+        search_performance_df=search_performance_runtime_results,
+        extreme_quantile_df=extreme_quantile_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename_prefix="joint_candidates_and_extreme_quantile_by_runtime",
+        analysis_type=analysis_type,
+        subfolder="joint_candidates_analysis/by_runtime",
+        schema=schema,
+        search_x_col=schema.norm_runtime_unit,
+        search_x_col_label="% Budget Used",
+    )
+
+    if raw_benchmark_data[schema.bench_col].nunique() > 1:
+        global_candidates_raw = raw_benchmark_data.copy()
+        global_candidates_raw[schema.data_col] = (
+            global_candidates_raw[schema.bench_col] + "_" + global_candidates_raw[schema.data_col]
+        )
+        global_candidates_raw[schema.bench_col] = " + ".join(
+            sorted(global_candidates_raw[schema.bench_col].unique())
+        )
+
+        global_search_iter = processor.process_performance_records(
+            raw_benchmark_data=global_candidates_raw,
+            budget_unit=iter_unit,
+            relativize_budget=True,
+            collapse_repetitions=True,
+            collapse_datasets=True,
+            extra_ranking_cols=[estimator_architecture_col, sampler_col],
+            n_bootstraps=n_bootstraps,
+        )
+        global_search_iter["rank_lower"] = global_search_iter["rank_lower"].fillna(global_search_iter["rank"])
+        global_search_iter["rank_upper"] = global_search_iter["rank_upper"].fillna(global_search_iter["rank"])
+        global_search_iter["plotting_identifier"] = global_search_iter[n_candidates_col].apply(
+            lambda x: f"{int(x)} Candidates"
+        )
+
+        global_search_runtime = processor.process_performance_records(
+            raw_benchmark_data=global_candidates_raw,
+            budget_unit=runtime_unit,
+            relativize_budget=True,
+            collapse_repetitions=True,
+            collapse_datasets=True,
+            extra_ranking_cols=[estimator_architecture_col, sampler_col],
+            n_bootstraps=n_bootstraps,
+        )
+        global_search_runtime["rank_lower"] = global_search_runtime["rank_lower"].fillna(global_search_runtime["rank"])
+        global_search_runtime["rank_upper"] = global_search_runtime["rank_upper"].fillna(global_search_runtime["rank"])
+        global_search_runtime["plotting_identifier"] = global_search_runtime[n_candidates_col].apply(
+            lambda x: f"{int(x)} Candidates"
+        )
+
+        global_extreme_quantile = processor.process_performance_records(
+            raw_benchmark_data=global_candidates_raw,
+            budget_unit=iter_unit,
+            relativize_budget=False,
+            collapse_repetitions=True,
+            collapse_datasets=True,
+            extra_ranking_cols=[estimator_architecture_col, sampler_col],
+            n_bootstraps=n_bootstraps,
+        )
+        global_extreme_quantile["plotting_identifier"] = global_extreme_quantile[n_candidates_col].apply(
+            lambda x: f"{int(x)} Candidates"
+        )
+
+        plot_joint_candidates_and_extreme_quantile(
+            search_performance_df=global_search_iter,
+            extreme_quantile_df=global_extreme_quantile,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix="joint_candidates_and_extreme_quantile_by_iteration__global",
+            analysis_type=analysis_type,
+            subfolder="joint_candidates_analysis/by_iteration",
+            schema=schema,
+            search_x_col=schema.norm_iter_unit,
+            search_x_col_label="% Budget Used",
+        )
+
+        plot_joint_candidates_and_extreme_quantile(
+            search_performance_df=global_search_runtime,
+            extreme_quantile_df=global_extreme_quantile,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix="joint_candidates_and_extreme_quantile_by_runtime__global",
+            analysis_type=analysis_type,
+            subfolder="joint_candidates_analysis/by_runtime",
+            schema=schema,
+            search_x_col=schema.norm_runtime_unit,
+            search_x_col_label="% Budget Used",
+        )
 
 
 def analyze_ei_architecture(
@@ -1595,8 +2018,9 @@ def analyze_ei_architecture(
         )
 
     processor = BenchmarkDataProcessor(schema=schema)
+    runtime_unit = schema.runtime_unit
 
-    search_performance_results = processor.process_performance_records(
+    search_performance_iter_results = processor.process_performance_records(
         raw_benchmark_data=raw_benchmark_data,
         budget_unit=iter_unit,
         relativize_budget=True,
@@ -1605,18 +2029,42 @@ def analyze_ei_architecture(
         extra_ranking_cols=None,
         n_bootstraps=n_bootstraps,
     )
-    search_performance_results["rank_lower"] = search_performance_results[
+    search_performance_iter_results["rank_lower"] = search_performance_iter_results[
         "rank_lower"
-    ].fillna(search_performance_results["rank"])
-    search_performance_results["rank_upper"] = search_performance_results[
+    ].fillna(search_performance_iter_results["rank"])
+    search_performance_iter_results["rank_upper"] = search_performance_iter_results[
         "rank_upper"
-    ].fillna(search_performance_results["rank"])
+    ].fillna(search_performance_iter_results["rank"])
 
     save_analysis_results(
-        df=search_performance_results,
+        df=search_performance_iter_results,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename="ei_arch_search_performance_results.csv",
+        filename="ei_arch_search_performance_iterative_results.csv",
+        analysis_type=analysis_type,
+    )
+
+    search_performance_runtime_results = processor.process_performance_records(
+        raw_benchmark_data=raw_benchmark_data,
+        budget_unit=runtime_unit,
+        relativize_budget=True,
+        collapse_repetitions=True,
+        collapse_datasets=True,
+        extra_ranking_cols=None,
+        n_bootstraps=n_bootstraps,
+    )
+    search_performance_runtime_results["rank_lower"] = search_performance_runtime_results[
+        "rank_lower"
+    ].fillna(search_performance_runtime_results["rank"])
+    search_performance_runtime_results["rank_upper"] = search_performance_runtime_results[
+        "rank_upper"
+    ].fillna(search_performance_runtime_results["rank"])
+
+    save_analysis_results(
+        df=search_performance_runtime_results,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="ei_arch_search_performance_runtime_results.csv",
         analysis_type=analysis_type,
     )
 
@@ -1639,19 +2087,105 @@ def analyze_ei_architecture(
     )
 
     for benchmark in raw_benchmark_data[schema.bench_col].unique():
-        search_bench = search_performance_results[
-            search_performance_results[schema.bench_col] == benchmark
+        search_iter_bench = search_performance_iter_results[
+            search_performance_iter_results[schema.bench_col] == benchmark
+        ]
+        search_runtime_bench = search_performance_runtime_results[
+            search_performance_runtime_results[schema.bench_col] == benchmark
         ]
         ei_bench = ei_metrics_results[
             ei_metrics_results[schema.bench_col] == benchmark
         ]
         plot_ei_architecture_triplot(
-            search_performance_df=search_bench,
+            search_performance_df=search_iter_bench,
             ei_metrics_df=ei_bench,
             cache_path=cache_path,
             run_start_str=run_start_str,
-            filename_prefix=f"ei_architecture_triplot__{benchmark}",
+            filename_prefix=f"ei_architecture_triplot_by_iteration__{benchmark}",
             analysis_type=analysis_type,
-            subfolder="ei_architecture_analysis",
+            subfolder="ei_architecture_analysis/by_iteration",
             schema=schema,
+            search_x_col=schema.norm_iter_unit,
+            search_x_col_label="% Budget Used",
+        )
+        plot_ei_architecture_triplot(
+            search_performance_df=search_runtime_bench,
+            ei_metrics_df=ei_bench,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix=f"ei_architecture_triplot_by_runtime__{benchmark}",
+            analysis_type=analysis_type,
+            subfolder="ei_architecture_analysis/by_runtime",
+            schema=schema,
+            search_x_col=schema.norm_runtime_unit,
+            search_x_col_label="% Budget Used",
+        )
+
+    if raw_benchmark_data[schema.bench_col].nunique() > 1:
+        global_ei_raw = raw_benchmark_data.copy()
+        global_ei_raw[schema.data_col] = (
+            global_ei_raw[schema.bench_col] + "_" + global_ei_raw[schema.data_col]
+        )
+        global_ei_raw[schema.bench_col] = " + ".join(
+            sorted(global_ei_raw[schema.bench_col].unique())
+        )
+
+        global_search_iter = processor.process_performance_records(
+            raw_benchmark_data=global_ei_raw,
+            budget_unit=iter_unit,
+            relativize_budget=True,
+            collapse_repetitions=True,
+            collapse_datasets=True,
+            extra_ranking_cols=None,
+            n_bootstraps=n_bootstraps,
+        )
+        global_search_iter["rank_lower"] = global_search_iter["rank_lower"].fillna(global_search_iter["rank"])
+        global_search_iter["rank_upper"] = global_search_iter["rank_upper"].fillna(global_search_iter["rank"])
+
+        global_search_runtime = processor.process_performance_records(
+            raw_benchmark_data=global_ei_raw,
+            budget_unit=runtime_unit,
+            relativize_budget=True,
+            collapse_repetitions=True,
+            collapse_datasets=True,
+            extra_ranking_cols=None,
+            n_bootstraps=n_bootstraps,
+        )
+        global_search_runtime["rank_lower"] = global_search_runtime["rank_lower"].fillna(global_search_runtime["rank"])
+        global_search_runtime["rank_upper"] = global_search_runtime["rank_upper"].fillna(global_search_runtime["rank"])
+
+        global_ei_metrics = processor.process_performance_records(
+            raw_benchmark_data=global_ei_raw,
+            budget_unit=iter_unit,
+            relativize_budget=False,
+            collapse_repetitions=True,
+            collapse_datasets=True,
+            extra_ranking_cols=None,
+            n_bootstraps=n_bootstraps,
+        )
+
+        plot_ei_architecture_triplot(
+            search_performance_df=global_search_iter,
+            ei_metrics_df=global_ei_metrics,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix="ei_architecture_triplot_by_iteration__global",
+            analysis_type=analysis_type,
+            subfolder="ei_architecture_analysis/by_iteration",
+            schema=schema,
+            search_x_col=schema.norm_iter_unit,
+            search_x_col_label="% Budget Used",
+        )
+
+        plot_ei_architecture_triplot(
+            search_performance_df=global_search_runtime,
+            ei_metrics_df=global_ei_metrics,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix="ei_architecture_triplot_by_runtime__global",
+            analysis_type=analysis_type,
+            subfolder="ei_architecture_analysis/by_runtime",
+            schema=schema,
+            search_x_col=schema.norm_runtime_unit,
+            search_x_col_label="% Budget Used",
         )
