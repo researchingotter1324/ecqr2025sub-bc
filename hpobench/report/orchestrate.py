@@ -331,7 +331,7 @@ def process_single_experiment_config(
                 if sampler_name == "ThompsonSampler":
                     if sampler.enable_optimistic_sampling:
                         aliased_sampler_name = "OBS"
-                elif sampler_name in ("LowerBoundSampler", "PessimisticLowerBoundSampler"):
+                elif sampler_name == "LowerBoundSampler":
                     # Build a stable, fully-qualified suffix so each distinct
                     # (iw, c, beta_decay) combination gets its own plotting group.
                     parts = []

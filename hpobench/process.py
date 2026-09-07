@@ -206,6 +206,33 @@ class BenchmarkDataProcessor:
         )
         return data_cleaned
 
+    def calculate_normalized_regret(
+        self,
+        data: pd.DataFrame,
+        metric_column: str = "best_performance",
+    ) -> pd.DataFrame:
+        """
+        Computes normalized regret per dataset from best performance values.
+
+        Within each dataset, min and max performance are taken across all tuners,
+        repetitions, and budget points. Normalized regret scales each row to
+        [0, 1] where 0 is best and 1 is worst for minimization problems.
+        """
+        data_cleaned = data.copy()
+        data_cleaned["nr_min_value"] = data_cleaned.groupby(self.dataset_level)[
+            metric_column
+        ].transform("min")
+        data_cleaned["nr_max_value"] = data_cleaned.groupby(self.dataset_level)[
+            metric_column
+        ].transform("max")
+        spread = data_cleaned["nr_max_value"] - data_cleaned["nr_min_value"]
+        data_cleaned["normalized_regret"] = np.where(
+            spread > 0,
+            (data_cleaned[metric_column] - data_cleaned["nr_min_value"]) / spread,
+            0.0,
+        )
+        return data_cleaned.drop(columns=["nr_min_value", "nr_max_value"])
+
     def accumulate_breaches(
         self, data: pd.DataFrame, budget_unit: str, rolling_window: int = 20
     ) -> pd.DataFrame:
@@ -476,6 +503,7 @@ class BenchmarkDataProcessor:
         aligned_data = self.align_tuners_to_shared_budget(
             accumulated_data, self.iter_unit
         )
+        aligned_data = self.calculate_normalized_regret(aligned_data)
         ranked_data = self.calculate_ranks(
             aligned_data,
             self.iter_unit,
@@ -490,10 +518,11 @@ class BenchmarkDataProcessor:
 
         budget_unit = self.iter_unit
         if relativize_budget:
-            metrics = ["rank", "best_performance"]
+            metrics = ["rank", "normalized_regret", "best_performance"]
         else:
             metrics = [
                 "rank",
+                "normalized_regret",
                 "best_performance",
                 self.cumulative_coverage_error_col,
                 self.rolling_coverage_error_col,
@@ -545,6 +574,7 @@ class BenchmarkDataProcessor:
         aligned_data = self.align_tuners_to_shared_budget(
             discretized_data, self.runtime_unit
         )
+        aligned_data = self.calculate_normalized_regret(aligned_data)
         final_data = self.calculate_ranks(
             aligned_data,
             self.runtime_unit,
@@ -556,13 +586,17 @@ class BenchmarkDataProcessor:
         budget_unit = self.runtime_unit
         if relativize_budget:
             final_data = self.standardize_budget_to_percentage(
-                final_data, self.runtime_unit, ["rank", "best_performance"]
+                final_data,
+                self.runtime_unit,
+                ["rank", "normalized_regret", "best_performance"],
             )
             budget_unit = f"normalized_{self.runtime_unit}"
 
         if collapse_repetitions:
             final_data = self.collapse_across_repetitions(
-                final_data, ["rank", "best_performance"], budget_unit=budget_unit
+                final_data,
+                ["rank", "normalized_regret", "best_performance"],
+                budget_unit=budget_unit,
             )
 
         if collapse_datasets:
@@ -575,7 +609,7 @@ class BenchmarkDataProcessor:
                     for col in self.tuner_level + [budget_unit]
                     if col != self.data_col
                 ],
-                metric_cols=["rank", "best_performance"],
+                metric_cols=["rank", "normalized_regret", "best_performance"],
                 n_bootstraps=n_bootstraps,
                 random_state=1234,
             )
