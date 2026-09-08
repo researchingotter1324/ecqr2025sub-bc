@@ -117,8 +117,8 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
 
 
 ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
-PLBS_INTERVAL_WIDTH = 0.8
-PLBS_ADAPTER = "DtACI"
+UCB_INTERVAL_WIDTH = 0.8
+UCB_ADAPTER = "DtACI"
 ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
     architectures=[
             "qgbm",
@@ -140,8 +140,8 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             local_search= SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
         ),
         PessimisticLowerBoundSampler(
-            interval_width=PLBS_INTERVAL_WIDTH,
-            adapter=PLBS_ADAPTER,
+            interval_width=UCB_INTERVAL_WIDTH,
+            adapter=UCB_ADAPTER,
             local_search=None,
         ),
     ],
@@ -203,8 +203,8 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = list(
             local_search=None,
             ),
         PessimisticLowerBoundSampler(
-            interval_width=PLBS_INTERVAL_WIDTH,
-            adapter=PLBS_ADAPTER,
+            interval_width=UCB_INTERVAL_WIDTH,
+            adapter=UCB_ADAPTER,
             local_search=None,
         ),
         ],

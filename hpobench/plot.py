@@ -408,21 +408,21 @@ def is_non_local(legend_label: str) -> bool:
     return False
 
 
-def is_plbs_entity(label: str) -> bool:
+def is_ucb_entity(label: str) -> bool:
     label = str(label)
-    return label == "PLBS" or label.endswith("-PLBS")
+    return label == "UCB" or label.endswith("-UCB")
 
 
 def display_entity_label(label: str) -> str:
-    """Normalize entity labels for display (e.g. drop NL- prefix for PLBS)."""
+    """Normalize entity labels for display (e.g. drop NL- prefix for UCB)."""
     label = str(label)
-    if is_plbs_entity(label) and label.startswith("NL-"):
+    if is_ucb_entity(label) and label.startswith("NL-"):
         return label[3:]
     return label
 
 
 def entity_plot_linestyle(label: str) -> str:
-    if is_plbs_entity(label):
+    if is_ucb_entity(label):
         return "-"
     return "--" if is_non_local(label) else "-"
 
@@ -451,8 +451,8 @@ def canonical_architecture_label(arch: str) -> str:
 def joint_plot_sampler_label(sampler: str) -> str:
     """Return a short sampler title for joint architecture plots."""
     sampler = str(sampler)
-    if sampler.startswith("PLBS"):
-        return "PLBS"
+    if sampler.startswith("UCB"):
+        return "UCB"
     if sampler.startswith("LBS"):
         return "LBS"
     return sampler
