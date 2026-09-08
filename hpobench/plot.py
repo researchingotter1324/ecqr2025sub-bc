@@ -169,13 +169,15 @@ def _draw_search_progression_ax(
     show_xlabel: bool,
     add_confidence_intervals: bool = True,
 ) -> None:
-    for entity_idx, (entity, entity_data) in enumerate(row_data.groupby(entity_col)):
-        color = DEFAULT_COLOR_PALETTE[entity_idx % len(DEFAULT_COLOR_PALETTE)]
-        linestyle = "--" if is_non_local(entity) else "-"
+    entity_color_map = build_entity_color_map(row_data[entity_col].unique())
+    for entity, entity_data in row_data.groupby(entity_col):
+        display_label = display_entity_label(entity)
+        color = entity_color_map[entity]
+        linestyle = entity_plot_linestyle(entity)
         line = ax.plot(
             entity_data[x_col],
             entity_data[metric_col],
-            label=entity,
+            label=display_label,
             alpha=0.8,
             color=color,
             marker=None,
@@ -183,9 +185,9 @@ def _draw_search_progression_ax(
             linestyle=linestyle,
         )[0]
 
-        if add_to_legend:
+        if add_to_legend and display_label not in legend_labels:
             legend_handles.append(line)
-            legend_labels.append(entity)
+            legend_labels.append(display_label)
 
         lower_col = f"{metric_col}_lower"
         upper_col = f"{metric_col}_upper"
@@ -406,6 +408,40 @@ def is_non_local(legend_label: str) -> bool:
     return False
 
 
+def is_plbs_entity(label: str) -> bool:
+    label = str(label)
+    return label == "PLBS" or label.endswith("-PLBS")
+
+
+def display_entity_label(label: str) -> str:
+    """Normalize entity labels for display (e.g. drop NL- prefix for PLBS)."""
+    label = str(label)
+    if is_plbs_entity(label) and label.startswith("NL-"):
+        return label[3:]
+    return label
+
+
+def entity_plot_linestyle(label: str) -> str:
+    if is_plbs_entity(label):
+        return "-"
+    return "--" if is_non_local(label) else "-"
+
+
+def build_entity_color_map(entities) -> dict[str, str]:
+    """Map raw entity identifiers to colors via their display labels."""
+    display_labels = sorted(
+        {display_entity_label(entity) for entity in entities},
+        key=legend_sort_key,
+    )
+    display_to_color = {
+        display_label: DEFAULT_COLOR_PALETTE[idx % len(DEFAULT_COLOR_PALETTE)]
+        for idx, display_label in enumerate(display_labels)
+    }
+    return {
+        entity: display_to_color[display_entity_label(entity)] for entity in entities
+    }
+
+
 def canonical_architecture_label(arch: str) -> str:
     """Strip the non-local prefix so architectures share one color across samplers."""
     arch = str(arch)
@@ -436,12 +472,13 @@ def plot_tuner(
     add_markers: bool = True,
 ) -> None:
     marker_style = marker if add_markers else "None"
-    linestyle = "--" if is_non_local(legend_label) else "-"
+    display_label = display_entity_label(legend_label)
+    linestyle = entity_plot_linestyle(legend_label)
 
     ax.plot(
         tuner_data[x_col],
         tuner_data[y_col],
-        label=legend_label,
+        label=display_label,
         alpha=0.8,
         color=color,
         marker=marker_style,
@@ -552,9 +589,8 @@ def plot_benchmark_data(
                 subset = subset[subset[row_measure] == row_value]
             if col_measure is not None:
                 subset = subset[subset[col_measure] == col_value]
-            for entity_idx, (entity, entity_data) in enumerate(
-                subset.groupby(entity_col)
-            ):
+            entity_color_map = build_entity_color_map(subset[entity_col].unique())
+            for entity, entity_data in subset.groupby(entity_col):
                 if entity_data[x_col].duplicated().any():
                     raise ValueError(
                         f"Duplicate X-axis values found for {x_col} in entity '{entity}' "
@@ -571,9 +607,7 @@ def plot_benchmark_data(
                     tuner_data=entity_data,
                     x_col=x_col,
                     y_col=y_col,
-                    color=DEFAULT_COLOR_PALETTE[
-                        entity_idx % len(DEFAULT_COLOR_PALETTE)
-                    ],
+                    color=entity_color_map[entity],
                     add_ci=add_confidence_intervals,
                     y_col_lower=y_col_lower,
                     y_col_upper=y_col_upper,
@@ -810,15 +844,22 @@ def plot_critical_difference_diagram(
         return
 
     # Convert to format expected by scikit-posthocs
-    ranks_series = pd.Series(mean_ranks)
-    algorithms = list(mean_ranks.keys())
+    raw_to_display = {
+        entity: display_entity_label(entity) for entity in mean_ranks.keys()
+    }
+    display_mean_ranks: dict[str, float] = {}
+    for entity, rank in mean_ranks.items():
+        display_mean_ranks[raw_to_display[entity]] = rank
+    ranks_series = pd.Series(display_mean_ranks)
+    algorithms = list(display_mean_ranks.keys())
 
     # Create significance matrix
     sig_matrix = pd.DataFrame(1.0, index=algorithms, columns=algorithms)
     np.fill_diagonal(sig_matrix.values, 1.0)
 
     for _, row in significance_results.iterrows():
-        alg1, alg2 = row["entity1"], row["entity2"]
+        alg1 = raw_to_display.get(row["entity1"], row["entity1"])
+        alg2 = raw_to_display.get(row["entity2"], row["entity2"])
         if alg1 in algorithms and alg2 in algorithms:
             p_val = row[p_value_column]
             sig_matrix.loc[alg1, alg2] = p_val
@@ -866,7 +907,11 @@ def apply_cd_formatting(ax):
 def plot_significance_matrix(
     ax, significance_data: pd.DataFrame, rank_data: pd.DataFrame, entity_col: str
 ):
-    entities = sorted(rank_data[entity_col].unique())
+    entities = sorted(
+        rank_data[entity_col].unique(),
+        key=lambda entity: legend_sort_key(display_entity_label(entity)),
+    )
+    display_entities = [display_entity_label(entity) for entity in entities]
     avg_ranks = dict(zip(rank_data[entity_col], rank_data["rank"]))
 
     p_matrix = pd.DataFrame(np.nan, index=entities, columns=entities)
@@ -913,8 +958,8 @@ def plot_significance_matrix(
         annot_kws={"size": 7, "color": "black"},
         linewidths=0.5,
         linecolor="black",
-        xticklabels=entities,
-        yticklabels=entities,
+        xticklabels=display_entities,
+        yticklabels=display_entities,
         ax=ax,
     )
 
@@ -1700,16 +1745,13 @@ def plot_joint_candidates_and_extreme_quantile(
     identifier_col = "plotting_identifier"
     row_values = search_performance_df[row_measure].unique()
 
-    all_identifiers = sorted(
+    raw_identifiers = sorted(
         set(search_performance_df[identifier_col]).union(
             extreme_quantile_df[identifier_col]
         ),
-        key=identifier_sort_key,
+        key=lambda entity: legend_sort_key(display_entity_label(entity)),
     )
-    color_map = {
-        identifier: DEFAULT_COLOR_PALETTE[idx % len(DEFAULT_COLOR_PALETTE)]
-        for idx, identifier in enumerate(all_identifiers)
-    }
+    raw_identifier_color_map = build_entity_color_map(raw_identifiers)
 
     base_width = 4.0
     base_height = 3.0
@@ -1730,25 +1772,27 @@ def plot_joint_candidates_and_extreme_quantile(
             search_performance_df[row_measure] == row_value
         ]
 
-        for identifier in all_identifiers:
+        for identifier in raw_identifiers:
             entity_data = search_row_data[
                 search_row_data[identifier_col] == identifier
             ]
             if entity_data.empty:
                 continue
-            color = color_map[identifier]
+            color = raw_identifier_color_map[identifier]
+            display_label = display_entity_label(identifier)
             line = ax_search.plot(
                 entity_data[search_x_col],
                 entity_data[search_metric_col],
-                label=identifier,
+                label=display_label,
                 alpha=0.8,
                 color=color,
                 marker=None,
                 markersize=4,
+                linestyle=entity_plot_linestyle(identifier),
             )[0]
-            if i == 0:
+            if i == 0 and display_label not in legend_labels:
                 legend_handles.append(line)
-                legend_labels.append(identifier)
+                legend_labels.append(display_label)
             lower_col = f"{search_metric_col}_lower"
             upper_col = f"{search_metric_col}_upper"
             if lower_col in entity_data.columns and upper_col in entity_data.columns:
@@ -1774,21 +1818,23 @@ def plot_joint_candidates_and_extreme_quantile(
             extreme_quantile_df[row_measure] == row_value
         ]
 
-        for identifier in all_identifiers:
+        for identifier in raw_identifiers:
             entity_data = extreme_row_data[
                 extreme_row_data[identifier_col] == identifier
             ].sort_values(by=schema.iter_unit)
             if entity_data.empty:
                 continue
-            color = color_map[identifier]
+            color = raw_identifier_color_map[identifier]
+            display_label = display_entity_label(identifier)
             ax_extreme.plot(
                 entity_data[schema.iter_unit],
                 entity_data["cumulative_extreme_quantile_rate"] * 100,
-                label=identifier,
+                label=display_label,
                 alpha=0.8,
                 color=color,
                 marker=None,
                 markersize=4,
+                linestyle=entity_plot_linestyle(identifier),
             )
 
         ax_extreme.set_xlabel("Iteration", fontsize=14)
