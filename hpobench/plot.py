@@ -154,6 +154,21 @@ def apply_metric_yscale(ax: "plt.Axes", metric_col: str) -> None:
     ax.yaxis.set_major_formatter(plt.FuncFormatter(_format_normalized_regret_tick))
 
 
+def _prepare_plot_data_with_bounds(
+    df: pd.DataFrame, metric_cols: tuple[str, ...] | list[str]
+) -> pd.DataFrame:
+    """Fill missing confidence-bound values from their metric columns for plotting."""
+    plot_data = df.copy()
+    for metric_col in metric_cols:
+        lower_col = f"{metric_col}_lower"
+        upper_col = f"{metric_col}_upper"
+        if lower_col in plot_data.columns and metric_col in plot_data.columns:
+            plot_data[lower_col] = plot_data[lower_col].fillna(plot_data[metric_col])
+        if upper_col in plot_data.columns and metric_col in plot_data.columns:
+            plot_data[upper_col] = plot_data[upper_col].fillna(plot_data[metric_col])
+    return plot_data
+
+
 def _draw_search_progression_ax(
     ax: "plt.Axes",
     row_data: pd.DataFrame,
@@ -193,6 +208,7 @@ def _draw_search_progression_ax(
         upper_col = f"{metric_col}_upper"
         if (
             add_confidence_intervals
+            and metric_col != "normalized_regret"
             and lower_col in entity_data.columns
             and upper_col in entity_data.columns
         ):
@@ -485,7 +501,12 @@ def plot_tuner(
         markersize=4,
         linestyle=linestyle,
     )
-    if add_ci and y_col_lower and y_col_upper:
+    if (
+        add_ci
+        and y_col != "normalized_regret"
+        and y_col_lower
+        and y_col_upper
+    ):
         ax.fill_between(
             tuner_data[x_col],
             tuner_data[y_col_lower],
@@ -774,23 +795,16 @@ def plot_and_save(
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
     plot_path = os.path.join(output_path, filename_prefix)
 
-    data = data.copy()
-    for y_col in y_cols:
-        lower_col = f"{y_col}_lower"
-        upper_col = f"{y_col}_upper"
-        if lower_col in data.columns and y_col in data.columns:
-            data[lower_col] = data[lower_col].fillna(data[y_col])
-        if upper_col in data.columns and y_col in data.columns:
-            data[upper_col] = data[upper_col].fillna(data[y_col])
+    plot_data = _prepare_plot_data_with_bounds(data, y_cols)
 
     if y_cols_lower is None:
         y_cols_lower = [
-            f"{y_col}_q10" if f"{y_col}_q10" in data.columns else None
+            f"{y_col}_q10" if f"{y_col}_q10" in plot_data.columns else None
             for y_col in y_cols
         ]
     if y_cols_upper is None:
         y_cols_upper = [
-            f"{y_col}_q90" if f"{y_col}_q90" in data.columns else None
+            f"{y_col}_q90" if f"{y_col}_q90" in plot_data.columns else None
             for y_col in y_cols
         ]
 
@@ -803,7 +817,7 @@ def plot_and_save(
         )
 
         plot_benchmark_data(
-            data=data,
+            data=plot_data,
             plot_path=f"{plot_path}__{y_col}",
             x_col=x_col,
             y_col=y_col,
@@ -1053,16 +1067,11 @@ def plot_paired_rank_and_cd(
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
     plot_path = os.path.join(output_path, f"{filename_prefix}_paired")
 
-    data = data.copy()
-    for metric_col in ("rank", "normalized_regret"):
-        lower_col = f"{metric_col}_lower"
-        upper_col = f"{metric_col}_upper"
-        if lower_col in data.columns and metric_col in data.columns:
-            data[lower_col] = data[lower_col].fillna(data[metric_col])
-        if upper_col in data.columns and metric_col in data.columns:
-            data[upper_col] = data[upper_col].fillna(data[metric_col])
+    plot_data = _prepare_plot_data_with_bounds(
+        data, ("rank", "normalized_regret")
+    )
 
-    row_values = data[row_measure].unique()
+    row_values = plot_data[row_measure].unique()
 
     base_width = 4.0
     base_height = 3.0
@@ -1105,7 +1114,7 @@ def plot_paired_rank_and_cd(
     legend_labels = []
 
     for i, row_value in enumerate(row_values):
-        row_data = data[data[row_measure] == row_value]
+        row_data = plot_data[plot_data[row_measure] == row_value]
         row_sig_data = significance_data[significance_data[row_measure] == row_value]
         show_xlabel = i == len(row_values) - 1
 
@@ -1295,31 +1304,23 @@ def plot_joint_architecture_and_static(
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
     plot_path = os.path.join(output_path, f"{filename_prefix}__{search_metric_col}")
 
-    search_performance_df = search_performance_df.copy()
-    lower_col = f"{search_metric_col}_lower"
-    upper_col = f"{search_metric_col}_upper"
-    if lower_col in search_performance_df.columns:
-        search_performance_df[lower_col] = search_performance_df[lower_col].fillna(
-            search_performance_df[search_metric_col]
-        )
-    if upper_col in search_performance_df.columns:
-        search_performance_df[upper_col] = search_performance_df[upper_col].fillna(
-            search_performance_df[search_metric_col]
-        )
+    plot_data = _prepare_plot_data_with_bounds(
+        main_processed_df, (search_metric_col,)
+    )
 
     row_measure = schema.bench_col
     arch_col = schema.estimator_architecture_col
     sampler_col = schema.sampler_col
 
-    row_values = main_processed_df[row_measure].unique()
-    samplers = sorted(main_processed_df[sampler_col].unique())
+    row_values = plot_data[row_measure].unique()
+    samplers = sorted(plot_data[sampler_col].unique())
     n_sampler_cols = len(samplers)
     n_cols = n_sampler_cols + 1  # sampler columns + pinball-loss column
 
     all_archs = sorted(
         {
             canonical_architecture_label(arch)
-            for arch in main_processed_df[arch_col].unique()
+            for arch in plot_data[arch_col].unique()
         }
     )
     color_map = {
@@ -1340,7 +1341,7 @@ def plot_joint_architecture_and_static(
     row_axis_groups: list[tuple[list, "plt.Axes"]] = []
 
     for i, row_value in enumerate(row_values):
-        main_row_data = main_processed_df[main_processed_df[row_measure] == row_value]
+        main_row_data = plot_data[plot_data[row_measure] == row_value]
 
         search_axes = []
         for j, sampler in enumerate(samplers):
@@ -1368,7 +1369,11 @@ def plot_joint_architecture_and_static(
                     legend_labels.append(canon_arch)
                 lower_col = f"{search_metric_col}_lower"
                 upper_col = f"{search_metric_col}_upper"
-                if lower_col in arch_data.columns and upper_col in arch_data.columns:
+                if (
+                    search_metric_col != "normalized_regret"
+                    and lower_col in arch_data.columns
+                    and upper_col in arch_data.columns
+                ):
                     ax_search.fill_between(
                         arch_data[search_x_col],
                         arch_data[lower_col],
@@ -1508,6 +1513,7 @@ def plot_ei_architecture_triplot(
     search_x_col: str,
     search_x_col_label: str,
     search_metric_col: str = "rank",
+    n_pre_conformal_trials: int = 32,
 ) -> None:
     """Three-panel EI architecture figure: search ranks | ei_collapsed rate | perc_zero_ei.
 
@@ -1520,34 +1526,28 @@ def plot_ei_architecture_triplot(
     Args:
         search_x_col: Column to use as the x-axis for the search-rank panel.
         search_x_col_label: X-axis label for the search-rank panel.
+        n_pre_conformal_trials: Iteration count before conformalization begins; marked
+            with a vertical line on the EI metric panels.
     """
     path_manager = AnalysisPathManager(cache_path, run_start_str)
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
     plot_path = os.path.join(output_path, f"{filename_prefix}__{search_metric_col}")
 
-    search_performance_df = search_performance_df.copy()
-    lower_col = f"{search_metric_col}_lower"
-    upper_col = f"{search_metric_col}_upper"
-    if lower_col in search_performance_df.columns:
-        search_performance_df[lower_col] = search_performance_df[lower_col].fillna(
-            search_performance_df[search_metric_col]
-        )
-    if upper_col in search_performance_df.columns:
-        search_performance_df[upper_col] = search_performance_df[upper_col].fillna(
-            search_performance_df[search_metric_col]
-        )
+    plot_data = _prepare_plot_data_with_bounds(
+        search_performance_df, (search_metric_col,)
+    )
 
     arch_col = schema.estimator_architecture_col
     bench_col = schema.bench_col
 
     row_values = sorted(
-        set(search_performance_df[bench_col].unique()).union(
+        set(plot_data[bench_col].unique()).union(
             ei_metrics_df[bench_col].unique()
         )
     )
 
     all_archs = sorted(
-        set(search_performance_df[arch_col].unique()).union(
+        set(plot_data[arch_col].unique()).union(
             ei_metrics_df[arch_col].unique()
         )
     )
@@ -1572,9 +1572,7 @@ def plot_ei_architecture_triplot(
         ax_collapsed = fig.add_subplot(gs[i, 1])
         ax_zero_ei = fig.add_subplot(gs[i, 2])
 
-        search_row = search_performance_df[
-            search_performance_df[bench_col] == row_value
-        ]
+        search_row = plot_data[plot_data[bench_col] == row_value]
         ei_row = ei_metrics_df[ei_metrics_df[bench_col] == row_value]
 
         for arch in all_archs:
@@ -1594,7 +1592,11 @@ def plot_ei_architecture_triplot(
                 legend_labels.append(arch)
             lower_col = f"{search_metric_col}_lower"
             upper_col = f"{search_metric_col}_upper"
-            if lower_col in arch_data.columns and upper_col in arch_data.columns:
+            if (
+                search_metric_col != "normalized_regret"
+                and lower_col in arch_data.columns
+                and upper_col in arch_data.columns
+            ):
                 ax_search.fill_between(
                     arch_data[search_x_col],
                     arch_data[lower_col],
@@ -1634,6 +1636,12 @@ def plot_ei_architecture_triplot(
             f"EI Collapse Rate", fontsize=14, pad=20
         )
         ax_collapsed.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
+        ax_collapsed.axvline(
+            n_pre_conformal_trials,
+            color="black",
+            linestyle="--",
+            linewidth=1.2,
+        )
         for spine in ["top", "right", "bottom", "left"]:
             ax_collapsed.spines[spine].set_linewidth(1.2)
         ax_collapsed.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
@@ -1658,6 +1666,12 @@ def plot_ei_architecture_triplot(
         ax_zero_ei.set_ylabel("Zero EI Rate (%)", fontsize=14, labelpad=10)
         ax_zero_ei.set_title(f"Zero EI Rate", fontsize=14, pad=20)
         ax_zero_ei.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
+        ax_zero_ei.axvline(
+            n_pre_conformal_trials,
+            color="black",
+            linestyle="--",
+            linewidth=1.2,
+        )
         for spine in ["top", "right", "bottom", "left"]:
             ax_zero_ei.spines[spine].set_linewidth(1.2)
         ax_zero_ei.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
@@ -1729,24 +1743,16 @@ def plot_joint_candidates_and_extreme_quantile(
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
     plot_path = os.path.join(output_path, f"{filename_prefix}__{search_metric_col}")
 
-    search_performance_df = search_performance_df.copy()
-    lower_col = f"{search_metric_col}_lower"
-    upper_col = f"{search_metric_col}_upper"
-    if lower_col in search_performance_df.columns:
-        search_performance_df[lower_col] = search_performance_df[lower_col].fillna(
-            search_performance_df[search_metric_col]
-        )
-    if upper_col in search_performance_df.columns:
-        search_performance_df[upper_col] = search_performance_df[upper_col].fillna(
-            search_performance_df[search_metric_col]
-        )
+    plot_data = _prepare_plot_data_with_bounds(
+        search_performance_df, (search_metric_col,)
+    )
 
     row_measure = schema.bench_col
     identifier_col = "plotting_identifier"
-    row_values = search_performance_df[row_measure].unique()
+    row_values = plot_data[row_measure].unique()
 
     raw_identifiers = sorted(
-        set(search_performance_df[identifier_col]).union(
+        set(plot_data[identifier_col]).union(
             extreme_quantile_df[identifier_col]
         ),
         key=lambda entity: legend_sort_key(display_entity_label(entity)),
@@ -1768,9 +1774,7 @@ def plot_joint_candidates_and_extreme_quantile(
         ax_search = fig.add_subplot(gs[i, 0])
         ax_extreme = fig.add_subplot(gs[i, 1])
 
-        search_row_data = search_performance_df[
-            search_performance_df[row_measure] == row_value
-        ]
+        search_row_data = plot_data[plot_data[row_measure] == row_value]
 
         for identifier in raw_identifiers:
             entity_data = search_row_data[
@@ -1795,7 +1799,11 @@ def plot_joint_candidates_and_extreme_quantile(
                 legend_labels.append(display_label)
             lower_col = f"{search_metric_col}_lower"
             upper_col = f"{search_metric_col}_upper"
-            if lower_col in entity_data.columns and upper_col in entity_data.columns:
+            if (
+                search_metric_col != "normalized_regret"
+                and lower_col in entity_data.columns
+                and upper_col in entity_data.columns
+            ):
                 ax_search.fill_between(
                     entity_data[search_x_col],
                     entity_data[lower_col],

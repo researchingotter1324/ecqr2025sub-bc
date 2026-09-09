@@ -36,17 +36,29 @@ def _format_score_with_interval(
     return f"\\normalsize{{{mean_str}}} \\\\ {interval_str}"
 
 
-def _get_calibration_metrics_caption() -> str:
-    """Get the standard caption text for calibration metrics tables.
+def _get_calibration_metrics_caption(rank_metrics: bool) -> str:
+    """Get the caption text for calibration metrics tables.
+
+    Args:
+        rank_metrics: Whether the table reports ranks for every metric.
 
     Returns:
         LaTeX caption text describing calibration metrics analysis.
     """
+    if rank_metrics:
+        return (
+            "Calibration performance rank by calibration metric. "
+            "Chunked coverage deviation, McFadden's pseudo-$R^2$, and interval width "
+            "are computed for intervals at 25\\%, 50\\% and 75\\% confidence on all LCbench datasets, "
+            "then ranked across frameworks within each interval confidence and dataset. "
+            "Individual ranks are then averaged by framework to demonstrate cross-confidence and cross-dataset performance."
+        )
     return (
-        "Calibration performance rank by calibration metric. "
-        "Metrics are computed for intervals at 25\\%, 50\\% and 75\\% confidence on all LCbench datasets, "
-        "then ranked across frameworks within each interval confidence and dataset. "
-        "Individual ranks are then averaged by framework to demonstrate cross-confidence and cross-dataset performance."
+        "Calibration performance by metric. "
+        "Chunked coverage deviation and McFadden's pseudo-$R^2$ are averaged in native units "
+        "across interval confidences and datasets. "
+        "Interval width is ranked within each interval confidence and dataset, then averaged, "
+        "because raw width does not share a scale across tasks."
     )
 
 
@@ -115,7 +127,16 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
     Returns:
         LaTeX table string for the calibration metrics.
     """
-    target_metrics = ["chunked_target_coverage_deviation", "llr_statistic", "width"]
+    target_metrics = [
+        "chunked_target_coverage_deviation",
+        "mcfadden_r_squared",
+        "width",
+    ]
+    metric_titles = {
+        "chunked_target_coverage_deviation": "Chunked Target Coverage Deviation",
+        "mcfadden_r_squared": "McFadden $R^2$",
+        "width": "Width",
+    }
 
     available_metrics = []
     for metric in target_metrics:
@@ -149,7 +170,7 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
     # Build header row
     header_parts = ["\\textbf{Entity}"]
     for metric in available_metrics:
-        metric_title = metric.replace("_", " ").title()
+        metric_title = metric_titles.get(metric, metric.replace("_", " ").title())
         header_parts.append(f"\\textbf{{{metric_title}}}")
 
     lines.append(" & ".join(header_parts) + " \\\\")
@@ -260,6 +281,7 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
 def format_calibration_metrics_to_latex(
     results_df: pd.DataFrame,
     layout_breakout_col: Optional[str] = None,
+    rank_metrics: bool = True,
 ) -> str:
     """Format calibration metrics results into LaTeX table format.
 
@@ -272,12 +294,14 @@ def format_calibration_metrics_to_latex(
             mean values, confidence intervals, and ranking information.
         layout_breakout_col: Optional column name to break the results into
             separate tables for each unique value in that column.
+        rank_metrics: Whether the table reports ranks for every metric. Controls
+            the caption; width is ranked in both table variants.
 
     Returns:
         LaTeX formatted string containing one or more tables with calibration metrics.
     """
     blocks: List[str] = []
-    caption = _get_calibration_metrics_caption()
+    caption = _get_calibration_metrics_caption(rank_metrics)
 
     if layout_breakout_col and layout_breakout_col in results_df.columns:
         for l_val in sorted(results_df[layout_breakout_col].unique()):

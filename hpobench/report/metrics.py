@@ -489,16 +489,14 @@ def _log_likelihood(model, X_input, y):
     return np.sum(y * np.log(probs[:, 1] + eps) + (1 - y) * np.log(probs[:, 0] + eps))
 
 
-def _compute_likelihood_ratio_statistic(
+def _compute_mcfadden_r_squared(
     X: pd.DataFrame, y: pd.Series, random_state: Optional[int] = None
 ) -> float:
-    """Compute likelihood ratio test statistic for logistic regression models.
+    """Compute McFadden's pseudo-R² for a logistic regression of y on X.
 
-    Fits two logistic regression models:
-    1. Null model (intercept only)
-    2. Full model (with all features)
-
-    Computes the likelihood ratio test statistic: 2 * (log_likelihood_full - log_likelihood_null)
+    Fits an intercept-only null model and a full model on all features, then
+    returns 1 - LL_full / LL_null. This is a bounded association measure for
+    whether breach indicators depend on configuration features.
 
     Args:
         X: Feature matrix (configuration features).
@@ -506,13 +504,12 @@ def _compute_likelihood_ratio_statistic(
         random_state: Random seed for reproducible results.
 
     Returns:
-        Likelihood ratio test statistic, or nan if data contains only one class.
+        McFadden's pseudo-R², or nan if data contains only one class or the
+        statistic is invalid.
     """
-    # Check if y contains only one class
     if len(y.unique()) < 2:
         return np.nan
 
-    # Validate input dimensions
     if len(X) != len(y):
         logger.warning(
             f"Feature matrix and target length mismatch: {len(X)} vs {len(y)}"
@@ -522,7 +519,6 @@ def _compute_likelihood_ratio_statistic(
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Fit null model (intercept only)
     null_model = LogisticRegression(
         fit_intercept=True, random_state=random_state, max_iter=1000
     )
@@ -530,21 +526,25 @@ def _compute_likelihood_ratio_statistic(
     null_model.fit(intercept_only, y)
     ll_null = _log_likelihood(null_model, intercept_only, y)
 
-    # Fit full model
     full_model = LogisticRegression(
         fit_intercept=True, random_state=random_state, max_iter=1000
     )
     full_model.fit(X_scaled, y)
     ll_full = _log_likelihood(full_model, X_scaled, y)
 
-    llr_stat = 2 * (ll_full - ll_null)
-
-    # Validate result
-    if not np.isfinite(llr_stat) or llr_stat < 0:
-        logger.warning(f"Invalid LLR statistic computed: {llr_stat}")
+    if not np.isfinite(ll_null) or not np.isfinite(ll_full) or ll_null == 0:
+        logger.warning(
+            f"Invalid log-likelihoods for McFadden R²: ll_full={ll_full}, ll_null={ll_null}"
+        )
         return np.nan
 
-    return llr_stat
+    r_squared = 1.0 - (ll_full / ll_null)
+
+    if not np.isfinite(r_squared) or r_squared < 0:
+        logger.warning(f"Invalid McFadden R² computed: {r_squared}")
+        return np.nan
+
+    return r_squared
 
 
 def _calculate_chunked_target_coverage_deviation(
@@ -608,7 +608,7 @@ def calculate_calibration_statistics_per_repetition(
     """Calculate calibration statistics for conformal prediction methods.
 
     Computes various calibration metrics including chunked target coverage deviation
-    and likelihood ratio statistics for evaluating conformal prediction performance.
+    and McFadden's pseudo-R² for evaluating conformal prediction performance.
 
     Args:
         raw_benchmark_data: Raw benchmark results with breach indicators and configurations.
@@ -617,8 +617,10 @@ def calculate_calibration_statistics_per_repetition(
         entity_column: Column name for entities being compared (e.g., tuners).
         metric_columns: List of metric column names to compute.
         budget_unit: Column name for budget/iteration unit.
-        random_state: Random seed for reproducible likelihood ratio computations.
-        rank_metrics: Whether to rank metrics within groups.
+        random_state: Random seed for reproducible McFadden R² computations.
+        rank_metrics: If True, rank every metric within groups. If False, rank
+            only interval width (which does not share a scale across tasks) and
+            leave coverage deviation and McFadden R² in native units.
 
     Returns:
         DataFrame with averaged calibration statistics per repetition group.
@@ -641,7 +643,8 @@ def calculate_calibration_statistics_per_repetition(
     chunked_deviations = pd.concat(chunked_deviation_results).sort_index()
     sorted_experiment_log["chunked_target_coverage_deviation"] = chunked_deviations
 
-    score_columns = [col for col in metric_columns if col != "llr_statistic"]
+    association_metric = "mcfadden_r_squared"
+    score_columns = [col for col in metric_columns if col != association_metric]
 
     avg_scores_per_repetition = (
         sorted_experiment_log.groupby(aggregators)
@@ -649,33 +652,37 @@ def calculate_calibration_statistics_per_repetition(
         .reset_index()
     )
 
-    if "llr_statistic" in metric_columns:
-        # Fix: Don't pre-compute feature matrix, extract features per group to avoid index mismatch
-        def compute_group_llr(grp):
-            # Extract features directly from group to avoid index mismatch issues
+    if association_metric in metric_columns:
+        def compute_group_r_squared(grp):
             group_features = np.vstack(grp["tabularized_configuration"].values)
-            return _compute_likelihood_ratio_statistic(
+            return _compute_mcfadden_r_squared(
                 pd.DataFrame(group_features), grp[breach_column], random_state
             )
 
-        llr_series = sorted_experiment_log.groupby(aggregators).apply(compute_group_llr)
-        llr_df = llr_series.reset_index(name="llr_statistic")
+        r_squared_series = sorted_experiment_log.groupby(aggregators).apply(
+            compute_group_r_squared
+        )
+        r_squared_df = r_squared_series.reset_index(name=association_metric)
         avg_scores_per_repetition = avg_scores_per_repetition.merge(
-            llr_df, on=aggregators, how="left"
+            r_squared_df, on=aggregators, how="left"
         )
 
-        score_columns.append("llr_statistic")
+        score_columns.append(association_metric)
 
-    # NOTE: Rank is computed after raw scores are averaged across iterations (differs from search results)
+    # Rank after averaging across iterations (differs from search results).
+    # Width is always ranked: raw interval width does not average across tasks.
     if rank_metrics:
-        for metric_column in score_columns:
-            rank_ascending = True
-            rank_groupers = [col for col in aggregators if col != entity_column]
-            avg_scores_per_repetition[
-                metric_column
-            ] = avg_scores_per_repetition.groupby(rank_groupers)[metric_column].rank(
-                method="average",
-                ascending=rank_ascending,
-            )
+        metrics_to_rank = score_columns
+    else:
+        metrics_to_rank = [col for col in score_columns if col == "width"]
+
+    for metric_column in metrics_to_rank:
+        rank_groupers = [col for col in aggregators if col != entity_column]
+        avg_scores_per_repetition[metric_column] = avg_scores_per_repetition.groupby(
+            rank_groupers
+        )[metric_column].rank(
+            method="average",
+            ascending=True,
+        )
 
     return avg_scores_per_repetition

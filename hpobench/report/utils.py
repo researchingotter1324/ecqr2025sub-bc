@@ -539,7 +539,7 @@ def run_and_save_calibration_statistics(
         "width",
         "miscoverage_penalty",
         "chunked_target_coverage_deviation",
-        "llr_statistic",
+        "mcfadden_r_squared",
     ]
 
     logger = logging.getLogger(__name__)
@@ -571,6 +571,7 @@ def run_and_save_calibration_statistics(
         latex_metrics_str = format_calibration_metrics_to_latex(
             collapsed_calibration_stats,
             layout_breakout_col=latex_layout_breakout_col,
+            rank_metrics=rank_metrics,
         )
 
         if latex_metrics_str:

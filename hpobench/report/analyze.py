@@ -1977,6 +1977,20 @@ def analyze_ei_architecture(
             "EI architecture analysis requires exactly one sampler."
         )
 
+    n_pre_conformal_trials_col = schema.n_pre_conformal_trials_col
+    pre_conformal_values = (
+        pd.to_numeric(
+            raw_benchmark_data[n_pre_conformal_trials_col], errors="coerce"
+        )
+        .dropna()
+        .unique()
+    )
+    if len(pre_conformal_values) != 1:
+        raise ValueError(
+            "EI architecture analysis requires a single n_pre_conformal_trials value."
+        )
+    n_pre_conformal_trials = int(pre_conformal_values[0])
+
     processor = BenchmarkDataProcessor(schema=schema)
     runtime_unit = schema.runtime_unit
 
@@ -2069,6 +2083,7 @@ def analyze_ei_architecture(
                     search_x_col=search_x_col,
                     search_x_col_label="% Budget Used",
                     search_metric_col=search_metric_col,
+                    n_pre_conformal_trials=n_pre_conformal_trials,
                 )
 
     if raw_benchmark_data[schema.bench_col].nunique() > 1:
@@ -2135,4 +2150,5 @@ def analyze_ei_architecture(
                     search_x_col=search_x_col,
                     search_x_col_label="% Budget Used",
                     search_metric_col=search_metric_col,
+                    n_pre_conformal_trials=n_pre_conformal_trials,
                 )

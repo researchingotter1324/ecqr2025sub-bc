@@ -7,7 +7,8 @@ from hpobench.report.metrics import (
     wilcoxon_pairwise_test,
     permutation_pairwise_test,
     _log_likelihood,
-    _compute_likelihood_ratio_statistic,
+    _compute_mcfadden_r_squared,
+    calculate_calibration_statistics_per_repetition,
 )
 
 
@@ -520,76 +521,138 @@ def test_log_likelihood_function():
     assert probs[3, 1] > 0.8  # P(y=1) for fourth observation should be high
 
 
-def test_compute_likelihood_ratio_statistic_independent_data(independent_X_y_data):
-    """Test LR statistic with independent X and y."""
+def test_compute_mcfadden_r_squared_independent_data(independent_X_y_data):
+    """McFadden R² is small when features are independent of the outcome."""
     X, y = independent_X_y_data
 
-    statistic = _compute_likelihood_ratio_statistic(X, y, random_state=42)
+    statistic = _compute_mcfadden_r_squared(X, y, random_state=42)
 
-    # Should return a finite number
     assert np.isfinite(statistic)
-    # Should be non-negative (difference in log-likelihoods)
-    assert statistic >= 0
-    # For independent data, statistic should be relatively small
-    assert statistic < 20  # Arbitrary threshold for "small"
+    assert 0.0 <= statistic <= 1.0
+    assert statistic < 0.2
 
 
-def test_compute_likelihood_ratio_statistic_dependent_data(dependent_X_y_data):
-    """Test LR statistic with dependent X and y using mathematical theory."""
+def test_compute_mcfadden_r_squared_dependent_data(dependent_X_y_data):
+    """McFadden R² is substantially above chance when y is a function of X."""
     X, y = dependent_X_y_data
 
-    statistic = _compute_likelihood_ratio_statistic(X, y, random_state=42)
+    statistic = _compute_mcfadden_r_squared(X, y, random_state=42)
 
     assert np.isfinite(statistic)
-    assert statistic >= 0
-
-    # Mathematical expectation: For dependent data where y is strongly related to X,
-    # the full model should fit much better than the null (intercept-only) model.
-    # This should result in a large likelihood ratio statistic.
-
-    # The dependent_X_y_data fixture creates y = f(X) + noise, so there should be
-    # a strong relationship detectable by logistic regression
-
-    # For strongly dependent data, we expect the statistic to be much larger than
-    # what we'd see with independent data (which should be around the number of features)
-    n_features = X.shape[1]
-    expected_independent_magnitude = n_features * 2  # Conservative estimate
-
-    # The statistic should be substantially larger than what we'd expect by chance
-    assert statistic > expected_independent_magnitude
-
-    # Should also be much larger than the independent case threshold
-    assert statistic > 10
+    assert 0.0 <= statistic <= 1.0
+    assert statistic > 0.2
 
 
-def test_compute_likelihood_ratio_statistic_single_class(single_class_y_data):
-    """Test LR statistic with only one class in y."""
+def test_compute_mcfadden_r_squared_single_class(single_class_y_data):
+    """McFadden R² is undefined when y has only one class."""
     X, y = single_class_y_data
 
-    statistic = _compute_likelihood_ratio_statistic(X, y, random_state=42)
+    statistic = _compute_mcfadden_r_squared(X, y, random_state=42)
 
-    # Should return NaN for single class
     assert np.isnan(statistic)
 
 
-def test_compute_likelihood_ratio_statistic_comparison():
-    """Test that dependent data has larger LR statistic than independent data."""
-    # Create independent data
+def test_compute_mcfadden_r_squared_comparison():
+    """Dependent features yield a larger McFadden R² than independent features."""
     np.random.seed(123)
     X_indep = pd.DataFrame(np.random.randn(50, 2), columns=["f1", "f2"])
     y_indep = pd.Series(np.random.binomial(1, 0.5, 50))
 
-    # Create dependent data
     X_dep = pd.DataFrame(np.random.randn(50, 2), columns=["f1", "f2"])
     linear_combo = 3 * X_dep["f1"] + 2 * X_dep["f2"]
     probs = 1 / (1 + np.exp(-linear_combo))
     y_dep = pd.Series(np.random.binomial(1, probs))
 
-    stat_indep = _compute_likelihood_ratio_statistic(X_indep, y_indep, random_state=42)
-    stat_dep = _compute_likelihood_ratio_statistic(X_dep, y_dep, random_state=42)
+    stat_indep = _compute_mcfadden_r_squared(X_indep, y_indep, random_state=42)
+    stat_dep = _compute_mcfadden_r_squared(X_dep, y_dep, random_state=42)
 
-    # Dependent data should have larger statistic
     assert stat_dep > stat_indep
+    assert 0.0 <= stat_indep <= 1.0
+    assert 0.0 <= stat_dep <= 1.0
+
+
+@pytest.mark.parametrize("rank_metrics", [True, False])
+def test_calculate_calibration_statistics_per_repetition_ranking(rank_metrics):
+    """Width is always ranked; coverage and R² are ranked only when requested."""
+    n_iterations = 50
+    tuners = ["A", "B", "C"]
+    widths = {"A": 1.0, "B": 2.0, "C": 3.0}
+    breach_rates = {"A": 0.5, "B": 0.3, "C": 0.1}
+    expected_coverage = {tuner: abs(rate - 0.5) for tuner, rate in breach_rates.items()}
+    rows = []
+    for dataset in ["d1", "d2"]:
+        for tuner in tuners:
+            ones_per_chunk = int(round(10 * breach_rates[tuner]))
+            chunk_pattern = [1] * ones_per_chunk + [0] * (10 - ones_per_chunk)
+            breaches = np.array(chunk_pattern * (n_iterations // 10))
+            for iteration in range(n_iterations):
+                rows.append(
+                    {
+                        "benchmark_identifier": "bench",
+                        "dataset": dataset,
+                        "tuner": tuner,
+                        "repetition": 0,
+                        "sampler": "s",
+                        "confidence_level": 0.5,
+                        "estimator_architecture": "arch",
+                        "iteration": iteration,
+                        "breach_status": int(breaches[iteration]),
+                        "width": widths[tuner],
+                        "winkler_score": widths[tuner],
+                        "miscoverage_penalty": 0.0,
+                        "tabularized_configuration": np.array(
+                            [float(iteration), float(widths[tuner])]
+                        ),
+                    }
+                )
+    raw = pd.DataFrame(rows)
+    aggregators = [
+        "benchmark_identifier",
+        "dataset",
+        "tuner",
+        "repetition",
+        "sampler",
+        "confidence_level",
+        "estimator_architecture",
+    ]
+    result = calculate_calibration_statistics_per_repetition(
+        raw_benchmark_data=raw,
+        aggregators=aggregators,
+        breach_column="breach_status",
+        entity_column="tuner",
+        metric_columns=[
+            "winkler_score",
+            "width",
+            "miscoverage_penalty",
+            "chunked_target_coverage_deviation",
+            "mcfadden_r_squared",
+        ],
+        budget_unit="iteration",
+        random_state=42,
+        rank_metrics=rank_metrics,
+    )
+
+    assert len(result) == 6
+    assert set(result["tuner"]) == set(tuners)
+    width_by_tuner = result.groupby("tuner")["width"].mean()
+    assert width_by_tuner["A"] == 1.0
+    assert width_by_tuner["B"] == 2.0
+    assert width_by_tuner["C"] == 3.0
+
+    coverage_by_tuner = result.groupby("tuner")["chunked_target_coverage_deviation"].mean()
+    r_squared_by_tuner = result.groupby("tuner")["mcfadden_r_squared"].mean()
+    if rank_metrics:
+        assert coverage_by_tuner["A"] == 1.0
+        assert coverage_by_tuner["B"] == 2.0
+        assert coverage_by_tuner["C"] == 3.0
+        assert r_squared_by_tuner.min() >= 1.0
+        assert r_squared_by_tuner.max() <= 3.0
+    else:
+        assert coverage_by_tuner["A"] == pytest.approx(expected_coverage["A"])
+        assert coverage_by_tuner["B"] == pytest.approx(expected_coverage["B"])
+        assert coverage_by_tuner["C"] == pytest.approx(expected_coverage["C"])
+        assert r_squared_by_tuner.min() >= 0.0
+        assert r_squared_by_tuner.max() <= 1.0
 
 
 @pytest.mark.parametrize(
