@@ -347,10 +347,10 @@ def analyze_main_benchmark(
         - Saves aggregated results for different budget cross-sections
 
     Note:
-        Coverage plots and calibration tables use the same global benchmark
-        pooling as the other joint analyses: dataset IDs are prefixed with their
-        original benchmark name, and the benchmark column is replaced by the
-        concatenation of those names.
+        Coverage plots are produced per original benchmark (one facet grid of
+        datasets each). Calibration LaTeX tables use the global pooled
+        benchmark label, with dataset IDs prefixed by their original benchmark
+        name.
     """
     rep_col = schema.rep_col
     tuner_col = schema.tuner_col
@@ -525,78 +525,86 @@ def analyze_main_benchmark(
 
     if "coverage" in analysis_components:
         if starting_coverage_trial is not None:
-            coverage_data = global_benchmark_data[
+            coverage_plot_data = benchmark_data[
+                benchmark_data[iter_unit] >= starting_coverage_trial
+            ]
+            coverage_table_data = global_benchmark_data[
                 global_benchmark_data[iter_unit] >= starting_coverage_trial
             ]
         else:
-            coverage_data = global_benchmark_data
+            coverage_plot_data = benchmark_data
+            coverage_table_data = global_benchmark_data
 
-        coverage_iterative_results = processor.process_performance_records(
-            raw_benchmark_data=coverage_data,
-            budget_unit=iter_unit,
-            relativize_budget=False,
-            collapse_repetitions=True,
-            collapse_datasets=False,
-            extra_ranking_cols=[confidence_level_col],
-            n_bootstraps=n_bootstraps,
-        )
-        plot_and_save(
-            data=coverage_iterative_results,
-            x_col=iter_unit,
-            y_cols=["cumulative_coverage_error", "rolling_coverage_error"],
-            entity_col=tuner_col,
-            col_measure=confidence_level_col,
-            row_measure=data_col,
-            cache_path=cache_path,
-            run_start_str=run_start_str,
-            filename_prefix="coverage_per_dataset",
-            analysis_type=analysis_type,
-            subfolder="coverage_breach_rates",
-            y_cols_lower=None,
-            y_cols_upper=None,
-            share_y_axis=False,
-            col_measure_label="Confidence Level",
-            hide_col_and_row_labels=False,
-        )
-
-        dataset_values = coverage_iterative_results[data_col].astype(str)
-        snapshot_mask = (dataset_values == "7593") | dataset_values.str.endswith(
-            "_7593"
-        )
-        if snapshot_mask.any():
-            snapshot_data = coverage_iterative_results[snapshot_mask]
-        else:
-            random_data_col_value = (
-                coverage_iterative_results[data_col]
-                .sample(n=1, random_state=42)
-                .iloc[0]
-            )
-            snapshot_data = coverage_iterative_results[
-                coverage_iterative_results[data_col] == random_data_col_value
+        for benchmark in coverage_plot_data[bench_col].unique():
+            bench_coverage_data = coverage_plot_data[
+                coverage_plot_data[bench_col] == benchmark
             ]
-        snapshot_data = snapshot_data[
-            ~snapshot_data[tuner_col].str.contains("Split")
-        ]
-        plot_and_save(
-            data=snapshot_data,
-            x_col=iter_unit,
-            y_cols=["cumulative_coverage_error", "rolling_coverage_error"],
-            entity_col=tuner_col,
-            col_measure=confidence_level_col,
-            row_measure=data_col,
-            cache_path=cache_path,
-            run_start_str=run_start_str,
-            filename_prefix="coverage_per_dataset_snapshot",
-            analysis_type=analysis_type,
-            subfolder="coverage_breach_rates",
-            y_cols_lower=None,
-            y_cols_upper=None,
-            share_y_axis=False,
-            col_measure_label="Confidence Level",
-            hide_col_and_row_labels=False,
-        )
+            coverage_iterative_results = processor.process_performance_records(
+                raw_benchmark_data=bench_coverage_data,
+                budget_unit=iter_unit,
+                relativize_budget=False,
+                collapse_repetitions=True,
+                collapse_datasets=False,
+                extra_ranking_cols=[confidence_level_col],
+                n_bootstraps=n_bootstraps,
+            )
+            plot_and_save(
+                data=coverage_iterative_results,
+                x_col=iter_unit,
+                y_cols=["cumulative_coverage_error", "rolling_coverage_error"],
+                entity_col=tuner_col,
+                col_measure=confidence_level_col,
+                row_measure=data_col,
+                cache_path=cache_path,
+                run_start_str=run_start_str,
+                filename_prefix=f"coverage_per_dataset__{benchmark}",
+                analysis_type=analysis_type,
+                subfolder="coverage_breach_rates",
+                y_cols_lower=None,
+                y_cols_upper=None,
+                share_y_axis=False,
+                col_measure_label="Confidence Level",
+                hide_col_and_row_labels=False,
+            )
 
-        coverage_data_filtered = coverage_data[~(coverage_data[breach_col].isna())]
+            if "7593" in coverage_iterative_results[data_col].astype(str).unique():
+                snapshot_data = coverage_iterative_results[
+                    coverage_iterative_results[data_col].astype(str) == "7593"
+                ]
+            else:
+                random_data_col_value = (
+                    coverage_iterative_results[data_col]
+                    .sample(n=1, random_state=42)
+                    .iloc[0]
+                )
+                snapshot_data = coverage_iterative_results[
+                    coverage_iterative_results[data_col] == random_data_col_value
+                ]
+            snapshot_data = snapshot_data[
+                ~snapshot_data[tuner_col].str.contains("Split")
+            ]
+            plot_and_save(
+                data=snapshot_data,
+                x_col=iter_unit,
+                y_cols=["cumulative_coverage_error", "rolling_coverage_error"],
+                entity_col=tuner_col,
+                col_measure=confidence_level_col,
+                row_measure=data_col,
+                cache_path=cache_path,
+                run_start_str=run_start_str,
+                filename_prefix=f"coverage_per_dataset_snapshot__{benchmark}",
+                analysis_type=analysis_type,
+                subfolder="coverage_breach_rates",
+                y_cols_lower=None,
+                y_cols_upper=None,
+                share_y_axis=False,
+                col_measure_label="Confidence Level",
+                hide_col_and_row_labels=False,
+            )
+
+        coverage_data_filtered = coverage_table_data[
+            ~(coverage_table_data[breach_col].isna())
+        ]
         run_and_save_calibration_statistics(
             raw_benchmark_data=coverage_data_filtered,
             aggregators=[
