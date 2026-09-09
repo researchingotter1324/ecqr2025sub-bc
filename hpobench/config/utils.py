@@ -126,7 +126,7 @@ def create_searcher_config_id(
     if hasattr(sampler, "num_ei_samples"):
         config_id += f" ns={sampler.num_ei_samples}"
 
-    if n_pre_conformal_trials and n_pre_conformal_trials != 20:
+    if n_pre_conformal_trials and n_pre_conformal_trials != 31:
         config_id += f" pre={n_pre_conformal_trials}"
 
     calibration_strategy = getattr(searcher, "calibration_split_strategy", None)
@@ -153,7 +153,7 @@ def build_sampler_variation_configurations(
         ]
     ],
     quantile_arch: Any,
-    n_pre_conformal_trials: int = 20,
+    n_pre_conformal_trials: int = 31,
     searcher_tuning_framework: Optional[str] = None,
     calibration_split_strategy: str = "train_test_split",
     n_candidates: int = ExperimentParameters().n_candidates,
@@ -204,7 +204,7 @@ def build_architecture_variation_configurations(
             ExpectedImprovementSampler,
         ]
     ],
-    n_pre_conformal_trials: int = 20,
+    n_pre_conformal_trials: int = 31,
     searcher_tuning_framework: Optional[str] = None,
     calibration_split_strategy: str = "train_test_split",
     n_candidates: int = ExperimentParameters().n_candidates,

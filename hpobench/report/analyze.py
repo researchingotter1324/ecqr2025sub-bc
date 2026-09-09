@@ -3,6 +3,7 @@ import logging
 from typing import List, Literal, Optional
 from hpobench.utils import AnalysisPathManager
 from hpobench.config.schema import BenchmarkDataSchema
+from hpobench.config.tuner_configurations import DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
 from hpobench.utils import save_analysis_results
 from hpobench.plot import (
     plot_and_save,
@@ -1038,7 +1039,7 @@ def analyze_main_benchmark(
                     conformalization_results.apply(
                         lambda row: (
                             "Unconformalized"
-                            if row[n_pre_conformal_trials_col] > 32
+                            if row[n_pre_conformal_trials_col] > DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
                             else (
                                 "CV+ DtACI"
                                 if row[calibration_split_strategy_col] == "cv"
@@ -1113,7 +1114,7 @@ def analyze_main_benchmark(
                     global_conformalization_results.apply(
                         lambda row: (
                             "Unconformalized"
-                            if row[n_pre_conformal_trials_col] > 32
+                            if row[n_pre_conformal_trials_col] > DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
                             else (
                                 "CV+ DtACI"
                                 if row[calibration_split_strategy_col] == "cv"

@@ -1,4 +1,5 @@
 from hpobench.report.analyze import analyze_main_benchmark
+from hpobench.config.tuner_configurations import DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
 from hpobench.utils import save_analysis_results
 import pandas as pd
 
@@ -80,7 +81,9 @@ def test_analyze_main_benchmark(
 
     # For complex ranking components, we need ad hoc raw data:
     conformal_data = dummy_processing_raw_data.copy()
-    conformal_data[benchmark_data_schema.n_pre_conformal_trials_col] = 32
+    conformal_data[benchmark_data_schema.n_pre_conformal_trials_col] = (
+        DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
+    )
     non_conformal_data = dummy_processing_raw_data.copy()
     non_conformal_data[benchmark_data_schema.n_pre_conformal_trials_col] = 10000
     non_conformal_data[benchmark_data_schema.tuner_col] = (

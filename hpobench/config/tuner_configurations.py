@@ -29,6 +29,8 @@ TS_N_QUANTILES = 6
 EI_N_QUANTILES = 10
 
 LOCAL_SEARCH_RANDOM_STATE = 42
+DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS = 31
+UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS = 10000
 
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
 
@@ -52,6 +54,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
         split_conformal_searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=COVERAGE_ANALYSIS_ARCHITECTURE,
             sampler=split_conformal_sampler,
+            n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
             n_calibration_folds=5,
             calibration_split_strategy="train_test_split",
         )
@@ -77,6 +80,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
         cv_conformal_searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=COVERAGE_ANALYSIS_ARCHITECTURE,
             sampler=cv_conformal_sampler,
+            n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
             n_calibration_folds=5,
             calibration_split_strategy="cv",
         )
@@ -103,7 +107,7 @@ for interval_width in COVERAGE_INTERVAL_WIDTHS:
             c=0,
             local_search=None,
         ),
-        n_pre_conformal_trials=10000,
+        n_pre_conformal_trials=UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
         n_calibration_folds=3,
         calibration_split_strategy="train_test_split",
     )
@@ -145,6 +149,7 @@ ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurati
             local_search=None,
         ),
     ],
+    n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
     calibration_split_strategy="train_test_split",
 )
 
@@ -174,6 +179,7 @@ LOWERBOUND_ABLATION_CONFIGURATIONS = build_architecture_variation_configurations
         # --- pessimistic baseline (no LCB, pure lower-bound scoring) ---
         PessimisticLowerBoundSampler(interval_width=0.8, adapter=LOWERBOUND_ABLATION_ADAPTER, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
     ],
+    n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
     calibration_split_strategy="train_test_split",
 )
 
@@ -208,7 +214,7 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS = list(
             local_search=None,
         ),
         ],
-        n_pre_conformal_trials=32,
+        n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
         searcher_tuning_framework=None,
         calibration_split_strategy="train_test_split",
     )
@@ -222,7 +228,7 @@ LIMITED_ARCHITECTURE_VARIATION_CONFIGURATIONS += build_architecture_variation_co
             adapter=LIMITED_ARCHITECTURE_ADAPTER,
         ),
     ],
-    n_pre_conformal_trials=32,
+    n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
     searcher_tuning_framework=None,
     calibration_split_strategy="train_test_split",
 )
@@ -252,7 +258,7 @@ for calibration_split_strategy in PRECONFORMAL_CALIBRATION_STRATEGIES:
         build_architecture_variation_configurations(
             architectures=PRECONFORMAL_ARCHITECTURES,
             samplers=PRECONFORMAL_SAMPLERS,
-            n_pre_conformal_trials=32,
+            n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
             calibration_split_strategy=calibration_split_strategy,
             searcher_tuning_framework=None,
         )
@@ -262,10 +268,11 @@ PRECONFORMAL_COMPARISON_CONFIGURATIONS.extend(
     build_architecture_variation_configurations(
         architectures=PRECONFORMAL_ARCHITECTURES,
         samplers=PRECONFORMAL_SAMPLERS,
-        n_pre_conformal_trials=10000,
+        n_pre_conformal_trials=UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
         calibration_split_strategy="train_test_split",
         searcher_tuning_framework=None,
     )
+    
 )
 
 
@@ -292,7 +299,7 @@ for n_quantiles in QUANTILE_COUNT_VALUES:
                     local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
                 ),
             ],
-            n_pre_conformal_trials=32,
+            n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
             searcher_tuning_framework=None,
             calibration_split_strategy="train_test_split",
         )
@@ -317,7 +324,7 @@ for searcher_tuning_framework in [None, "fixed"]:
                     adapter=SEARCH_TUNING_EFFECT_ADAPTER,
                 )
             ],
-            n_pre_conformal_trials=32,
+            n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
             searcher_tuning_framework=searcher_tuning_framework,
             calibration_split_strategy="train_test_split",
         )
@@ -343,7 +350,7 @@ for n_candidates in NUM_CANDIDATES_VALUES:
                     adapter=NUM_CANDIDATES_VARIATION_ADAPTER,
                 ),
             ],
-            n_pre_conformal_trials=32,
+            n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
             searcher_tuning_framework=None,
             calibration_split_strategy="train_test_split",
             n_candidates=n_candidates,
@@ -365,7 +372,7 @@ for n_candidates in NUM_CANDIDATES_VALUES:
                     adapter=NUM_CANDIDATES_JOINT_ADAPTER,
                 ),
             ],
-            n_pre_conformal_trials=32,
+            n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
             searcher_tuning_framework=None,
             calibration_split_strategy="train_test_split",
             n_candidates=n_candidates,
@@ -388,7 +395,7 @@ EI_ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configur
             local_search= SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
         ),
     ],
-    n_pre_conformal_trials=32,
+    n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
     searcher_tuning_framework=None,
     calibration_split_strategy="train_test_split",
 )

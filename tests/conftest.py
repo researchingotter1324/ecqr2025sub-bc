@@ -3,6 +3,7 @@ import pytest
 import pandas as pd
 from hpobench.generation.generate import BlackBoxGenerator
 from hpobench.config.config_types import FloatRange
+from hpobench.config.tuner_configurations import DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
 import os
 
 
@@ -227,7 +228,7 @@ def dummy_processing_raw_data():
         + ["QRF"] * 4,
         # Added columns to match run_main_benchmark output format
         "searcher_tuning_framework": [""] * 54,
-        "n_pre_conformal_trials": [32] * 54,
+        "n_pre_conformal_trials": [DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS] * 54,
         "sampler_n_quantiles": [4] * 54,
         "sampler_adapter": ["DtACI"] * 54,
         "tuner_searcher_tuning_framework": [""] * 54,

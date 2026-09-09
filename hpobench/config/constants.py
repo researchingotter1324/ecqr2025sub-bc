@@ -25,7 +25,7 @@ class ExperimentParameters(BaseModel):
         large_n_repetitions_per_tuner_config: Repetitions for large experiments.
     """
 
-    n_trials: Optional[int] = 45
+    n_trials: Optional[int] = 40
     n_coverage_trials: int = 75
 
     timeout: Optional[int] = None
@@ -38,7 +38,7 @@ class ExperimentParameters(BaseModel):
     static_tuning_iterations: List[int] = [0]
     static_n_quantiles: int = 10
 
-    medium_n_repetitions_per_tuner_config: int = 3
+    medium_n_repetitions_per_tuner_config: int = 2
     large_n_repetitions_per_tuner_config: int = medium_n_repetitions_per_tuner_config 
 
 

@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import FixedLocator, NullFormatter
 from datetime import datetime
 import pandas as pd
 from typing import Optional, Dict, Literal
@@ -12,6 +13,7 @@ import math
 import re
 from hpobench.utils import AnalysisPathManager
 from hpobench.config.schema import BenchmarkDataSchema
+from hpobench.config.tuner_configurations import DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
 import seaborn as sns
 from matplotlib.colors import ListedColormap
 
@@ -76,82 +78,123 @@ def search_metric_label(metric_col: str) -> str:
     return label
 
 
-NORM_REGRET_LINTHRESH = 1e-4
-MIN_NORMALIZED_REGRET_Y_TICKS = 2
+NORM_REGRET_YTOP = 1.0  # 10^0 — fixed top tick on the normalized-regret axis
+NORM_REGRET_LOG_SUBS = (2, 3, 4, 6, 8)  # five sub-decade tick marks per full decade
+NORM_REGRET_TICK_LOG_MIN_SEP = 0.12  # min log10 gap between labeled major ticks
+PANEL_LABEL_GUTTER_WIDTH = 0.45  # GridSpec width ratio for (a)/(b) label gutters
 
 
-def _format_normalized_regret_tick(value: float, _pos: int | None = None) -> str:
-    if value == 0:
-        return "0"
-    abs_v = abs(value)
-    if abs_v >= 1:
-        decimals = 2
-    elif abs_v >= 0.1:
-        decimals = 2
-    elif abs_v >= 0.01:
-        decimals = 3
-    elif abs_v >= 0.001:
-        decimals = 4
-    else:
-        decimals = 5
-    formatted = f"{value:.{decimals}f}".rstrip("0").rstrip(".")
-    return formatted if formatted else "0"
+def _power_of_ten_tick_label(value: float, _pos: int | None = None) -> str:
+    """Format tick values as mantissa × 10^integer_exponent (e.g. 0.2 → 2×10^{-1})."""
+    if value <= 0 or not np.isfinite(value):
+        return ""
+    exponent = int(np.floor(np.log10(value)))
+    mantissa = value / (10.0 ** exponent)
+    if abs(mantissa - 1.0) < 1e-9:
+        return f"$10^{{{exponent}}}$"
+    if abs(mantissa - 10.0) < 1e-9:
+        return f"$10^{{{exponent + 1}}}$"
+    mantissa_str = f"{mantissa:.1f}".rstrip("0").rstrip(".")
+    return f"${mantissa_str} \\times 10^{{{exponent}}}$"
 
 
-def _normalized_regret_tick_values(
-    ymin: float, ymax: float, linthresh: float, min_ticks: int
+def _normalized_regret_data_ymin(ax: "plt.Axes") -> float:
+    ymin = np.inf
+    for line in ax.get_lines():
+        y = np.asarray(line.get_ydata(), dtype=float)
+        y = y[np.isfinite(y) & (y > 0)]
+        if y.size:
+            ymin = min(ymin, float(np.min(y)))
+    if np.isfinite(ymin):
+        return ymin
+    y0, _ = ax.get_ylim()
+    return max(float(y0), 1e-6)
+
+
+def _normalized_regret_major_ticks(y_bottom: float, y_top: float) -> list[float]:
+    ticks = {y_bottom, y_top}
+    exp_top = int(np.floor(np.log10(y_top)))
+    exp_bottom = int(np.ceil(np.log10(y_bottom)))
+    for exp in range(exp_top, exp_bottom - 1, -1):
+        tick = 10.0 ** exp
+        if y_bottom <= tick <= y_top:
+            ticks.add(tick)
+    return sorted(ticks)
+
+
+def _dedupe_normalized_regret_major_ticks(
+    ticks: list[float], y_bottom: float
 ) -> list[float]:
-    """Pick y-tick positions that span the visible normalized-regret range."""
-    ymin = max(float(ymin), 0.0)
-    ymax = float(ymax)
-    if not np.isfinite(ymax):
-        ymax = ymin + linthresh
-    if ymax <= ymin:
-        ymax = ymin + max(linthresh, abs(ymin) * 0.1 if ymin else linthresh)
-
-    if ymax <= linthresh:
-        ticks = np.linspace(ymin, ymax, min_ticks)
-    elif ymax / max(ymin, linthresh / 10) < 10:
-        if ymin <= 0 < ymax:
-            log_ticks = np.geomspace(linthresh, ymax, min_ticks - 1)
-            ticks = np.unique(np.concatenate([[0.0], log_ticks]))
-        elif ymax / max(ymin, 1e-12) < 2:
-            ticks = np.linspace(ymin, ymax, min_ticks)
+    """Drop higher major ticks that sit too close to a lower neighbor on a log axis."""
+    ticks = sorted(set(ticks))
+    if len(ticks) < 2:
+        return ticks
+    kept: list[float] = []
+    for tick in ticks:
+        if not kept:
+            kept.append(tick)
+            continue
+        prev = kept[-1]
+        if np.log10(tick / prev) < NORM_REGRET_TICK_LOG_MIN_SEP:
+            if abs(prev - y_bottom) < 1e-12 or abs(tick - y_bottom) < 1e-12:
+                kept[-1] = min(prev, tick)
+            elif tick < prev:
+                kept[-1] = tick
         else:
-            log_lo = np.log10(max(ymin, linthresh / 10))
-            log_hi = np.log10(ymax)
-            ticks = 10 ** np.linspace(log_lo, log_hi, min_ticks)
-    else:
-        log_lo = np.log10(max(ymin, linthresh / 10))
-        log_hi = np.log10(ymax)
-        ticks = 10 ** np.linspace(log_lo, log_hi, min(min_ticks + 1, 5))
-
-    ticks = sorted({float(t) for t in ticks if ymin <= t <= ymax})
-    if len(ticks) < min_ticks:
-        ticks = np.linspace(ymin, ymax, min_ticks).tolist()
-    return ticks[:6]
+            kept.append(tick)
+    return kept
 
 
-def apply_metric_yscale(ax: "plt.Axes", metric_col: str) -> None:
+def _normalized_regret_minor_ticks(y_bottom: float, y_top: float) -> list[float]:
+    """Sub-decade ticks at fixed log positions within each decade, clipped to the visible range."""
+    minors: list[float] = []
+    exp_top = int(np.floor(np.log10(y_top)))
+    exp_bottom = int(np.floor(np.log10(y_bottom)))
+    for exp in range(exp_top, exp_bottom - 1, -1):
+        decade_high = 10.0 ** exp
+        decade_low = 10.0 ** (exp - 1)
+        if y_bottom >= decade_high or y_top <= decade_low:
+            continue
+        for sub in NORM_REGRET_LOG_SUBS:
+            tick = decade_low * sub
+            if y_bottom < tick < y_top:
+                minors.append(tick)
+    return sorted(set(minors))
+
+
+def apply_metric_yscale(
+    ax: "plt.Axes",
+    metric_col: str,
+    y_bottom: Optional[float] = None,
+    y_top: Optional[float] = None,
+) -> None:
     if metric_col != "normalized_regret":
         return
 
-    ax.set_yscale("symlog", linthresh=NORM_REGRET_LINTHRESH)
-    ymin, ymax = ax.get_ylim()
-    ymin = max(ymin, 0.0)
+    y_top = NORM_REGRET_YTOP if y_top is None else float(y_top)
+    if y_bottom is None:
+        y_bottom = _normalized_regret_data_ymin(ax)
+    else:
+        y_bottom = float(y_bottom)
+    y_bottom = min(y_bottom, y_top)
+    if y_bottom <= 0 or not np.isfinite(y_bottom):
+        y_bottom = y_top / 10.0
+    if y_bottom >= y_top:
+        y_bottom = y_top / 10.0
 
-    visible_ticks = [
-        tick
-        for tick in ax.yaxis.get_majorticklocs()
-        if ymin <= tick <= ymax and np.isfinite(tick)
-    ]
-    if len(visible_ticks) < MIN_NORMALIZED_REGRET_Y_TICKS:
-        ax.set_yticks(
-            _normalized_regret_tick_values(
-                ymin, ymax, NORM_REGRET_LINTHRESH, MIN_NORMALIZED_REGRET_Y_TICKS
-            )
-        )
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(_format_normalized_regret_tick))
+    ax.set_yscale("log")
+    ax.set_ylim(y_bottom, y_top)
+
+    major_ticks = _dedupe_normalized_regret_major_ticks(
+        _normalized_regret_major_ticks(y_bottom, y_top), y_bottom
+    )
+    ax.set_yticks(major_ticks)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(_power_of_ten_tick_label))
+
+    minor_ticks = _normalized_regret_minor_ticks(y_bottom, y_top)
+    if minor_ticks:
+        ax.yaxis.set_minor_locator(FixedLocator(minor_ticks))
+    ax.yaxis.set_minor_formatter(NullFormatter())
 
 
 def _prepare_plot_data_with_bounds(
@@ -167,6 +210,50 @@ def _prepare_plot_data_with_bounds(
         if upper_col in plot_data.columns and metric_col in plot_data.columns:
             plot_data[upper_col] = plot_data[upper_col].fillna(plot_data[metric_col])
     return plot_data
+
+
+def _apply_shared_search_row_yscale(
+    search_axes: list,
+    row_data: pd.DataFrame,
+    search_metric_col: str,
+    y_margin_fraction: float = 0.05,
+) -> None:
+    """Align y-limits across search panels using metric values and CI bounds."""
+    if not search_axes:
+        return
+
+    lower_col = f"{search_metric_col}_lower"
+    upper_col = f"{search_metric_col}_upper"
+    use_ci = search_metric_col != "normalized_regret"
+    y_col_lower = lower_col if use_ci and lower_col in row_data.columns else None
+    y_col_upper = upper_col if use_ci and upper_col in row_data.columns else None
+
+    if search_metric_col == "normalized_regret":
+        shared_ymin = float(row_data[search_metric_col].min())
+        apply_metric_yscale(search_axes[0], search_metric_col, y_bottom=shared_ymin)
+        return
+
+    y_min, y_max = get_y_bounds(
+        row_data, search_metric_col, y_col_lower, y_col_upper
+    )
+    margin = y_margin_fraction * (y_max - y_min) if y_max > y_min else 0.5
+    for ax_search in search_axes:
+        ax_search.set_ylim(y_min - margin, y_max + margin)
+
+
+def _add_panel_label_gutter(fig: "plt.Figure", gs: GridSpec, row: int, col: int, label: str) -> None:
+    ax_gutter = fig.add_subplot(gs[row, col])
+    ax_gutter.set_axis_off()
+    ax_gutter.text(
+        0.5,
+        0.5,
+        label,
+        transform=ax_gutter.transAxes,
+        ha="center",
+        va="center",
+        fontsize=16,
+        fontweight="bold",
+    )
 
 
 def _draw_search_progression_ax(
@@ -1315,7 +1402,16 @@ def plot_joint_architecture_and_static(
     row_values = plot_data[row_measure].unique()
     samplers = sorted(plot_data[sampler_col].unique())
     n_sampler_cols = len(samplers)
-    n_cols = n_sampler_cols + 1  # sampler columns + pinball-loss column
+    search_col_offset = 1
+    gutter_b_col = n_sampler_cols + 1
+    static_col = n_sampler_cols + 2
+    width_ratios = (
+        [PANEL_LABEL_GUTTER_WIDTH]
+        + [1.0] * n_sampler_cols
+        + [PANEL_LABEL_GUTTER_WIDTH]
+        + [1.0]
+    )
+    n_gs_cols = len(width_ratios)
 
     all_archs = sorted(
         {
@@ -1330,22 +1426,36 @@ def plot_joint_architecture_and_static(
 
     base_width = 4.0
     base_height = 3.0
-    fig_width = base_width * n_cols
+    fig_width = base_width * (n_sampler_cols + 1 + PANEL_LABEL_GUTTER_WIDTH)
     fig_height = base_height * len(row_values)
 
-    fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
-    gs = GridSpec(nrows=len(row_values), ncols=n_cols, figure=fig)
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    gs = GridSpec(
+        nrows=len(row_values),
+        ncols=n_gs_cols,
+        figure=fig,
+        width_ratios=width_ratios,
+        wspace=0.28,
+        hspace=0.22,
+    )
 
     legend_handles: list = []
     legend_labels: list = []
-    row_axis_groups: list[tuple[list, "plt.Axes"]] = []
 
     for i, row_value in enumerate(row_values):
+        _add_panel_label_gutter(fig, gs, i, 0, "(a)")
+        _add_panel_label_gutter(fig, gs, i, gutter_b_col, "(b)")
+
         main_row_data = plot_data[plot_data[row_measure] == row_value]
 
         search_axes = []
         for j, sampler in enumerate(samplers):
-            ax_search = fig.add_subplot(gs[i, j])
+            if j == 0:
+                ax_search = fig.add_subplot(gs[i, search_col_offset + j])
+            else:
+                ax_search = fig.add_subplot(
+                    gs[i, search_col_offset + j], sharey=search_axes[0]
+                )
             search_axes.append(ax_search)
             sampler_data = main_row_data[main_row_data[sampler_col] == sampler]
 
@@ -1398,20 +1508,10 @@ def plot_joint_architecture_and_static(
                 ax_search.spines[spine].set_linewidth(1.2)
             ax_search.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
             ax_search.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
-            apply_metric_yscale(ax_search, search_metric_col)
 
-        # Share y-axis across all search-rank panels in this row
-        if len(search_axes) > 1 and search_metric_col != "normalized_regret":
-            all_search_data = main_row_data[main_row_data[sampler_col].isin(samplers)]
-            metric_vals = all_search_data[search_metric_col].dropna()
-            if not metric_vals.empty:
-                y_min = metric_vals.min()
-                y_max = metric_vals.max()
-                margin = 0.05 * (y_max - y_min) if y_max != y_min else 0.5
-                for ax_s in search_axes:
-                    ax_s.set_ylim(y_min - margin, y_max + margin)
+        _apply_shared_search_row_yscale(search_axes, main_row_data, search_metric_col)
 
-        ax_static = fig.add_subplot(gs[i, n_sampler_cols])
+        ax_static = fig.add_subplot(gs[i, static_col])
         static_row_data = static_processed_df[static_processed_df[row_measure] == row_value]
 
         for arch in sorted(static_row_data[arch_col].unique()):
@@ -1437,8 +1537,6 @@ def plot_joint_architecture_and_static(
         ax_static.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
         ax_static.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
-        row_axis_groups.append((search_axes, ax_static))
-
     handles, labels = sort_legend_items(legend_handles, legend_labels)
     legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
     num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
@@ -1457,40 +1555,14 @@ def plot_joint_architecture_and_static(
             frameon=False,
         )
 
-    extra_left = 0.025 * max(0, n_sampler_cols - 2)
-    extra_wspace = 0.06 * max(0, n_sampler_cols - 2)
-    left_margin = 0.10 + extra_left
     fig.subplots_adjust(
-        wspace=0.25 + extra_wspace,
+        wspace=0.28,
         hspace=0.22,
         bottom=legend_bottom_margin,
         top=0.90,
-        left=left_margin,
+        left=0.08,
         right=0.98,
     )
-
-    for search_axes, ax_static in row_axis_groups:
-        first_pos = search_axes[0].get_position()
-        static_pos = ax_static.get_position()
-        panel_label_offset = 0.012 + 0.004 * max(0, n_sampler_cols - 2)
-        fig.text(
-            first_pos.x0 - panel_label_offset,
-            first_pos.y0 + first_pos.height / 2,
-            "(a)",
-            ha="right",
-            va="center",
-            fontsize=16,
-            fontweight="bold",
-        )
-        fig.text(
-            static_pos.x0 - panel_label_offset,
-            static_pos.y0 + static_pos.height / 2,
-            "(b)",
-            ha="right",
-            va="center",
-            fontsize=16,
-            fontweight="bold",
-        )
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     for fmt in PLOT_FORMATS:
@@ -1513,7 +1585,7 @@ def plot_ei_architecture_triplot(
     search_x_col: str,
     search_x_col_label: str,
     search_metric_col: str = "rank",
-    n_pre_conformal_trials: int = 32,
+    n_pre_conformal_trials: int = DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
 ) -> None:
     """Three-panel EI architecture figure: search ranks | ei_collapsed rate | perc_zero_ei.
 
@@ -1526,8 +1598,8 @@ def plot_ei_architecture_triplot(
     Args:
         search_x_col: Column to use as the x-axis for the search-rank panel.
         search_x_col_label: X-axis label for the search-rank panel.
-        n_pre_conformal_trials: Iteration count before conformalization begins; marked
-            with a vertical line on the EI metric panels.
+        n_pre_conformal_trials: Number of non-conformal trials before conformalization;
+            a vertical line is drawn at this value plus one on the EI metric panels.
     """
     path_manager = AnalysisPathManager(cache_path, run_start_str)
     output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
@@ -1637,7 +1709,7 @@ def plot_ei_architecture_triplot(
         )
         ax_collapsed.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
         ax_collapsed.axvline(
-            n_pre_conformal_trials,
+            n_pre_conformal_trials + 1,
             color="black",
             linestyle="--",
             linewidth=1.2,
@@ -1667,7 +1739,7 @@ def plot_ei_architecture_triplot(
         ax_zero_ei.set_title(f"Zero EI Rate", fontsize=14, pad=20)
         ax_zero_ei.grid(True, linestyle="--", linewidth=0.4, alpha=0.6)
         ax_zero_ei.axvline(
-            n_pre_conformal_trials,
+            n_pre_conformal_trials + 1,
             color="black",
             linestyle="--",
             linewidth=1.2,
