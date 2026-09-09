@@ -506,6 +506,7 @@ def run_and_save_calibration_statistics(
     tuner_column: str,
     breach_column: str,
     dataset_column: str,
+    repetition_column: str,
     entity_column: str,
     budget_unit: str,
     cache_path: str,
@@ -539,6 +540,7 @@ def run_and_save_calibration_statistics(
         "width",
         "miscoverage_penalty",
         "chunked_target_coverage_deviation",
+        "global_target_coverage_deviation",
         "mcfadden_r_squared",
     ]
 
@@ -555,6 +557,7 @@ def run_and_save_calibration_statistics(
             entity_column=entity_column,
             metric_columns=metric_columns,
             budget_unit=budget_unit,
+            repetition_column=repetition_column,
             random_state=random_state,
             rank_metrics=rank_metrics,
         )

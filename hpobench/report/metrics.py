@@ -4,6 +4,7 @@ import logging
 from typing import List, Optional, Literal
 from scikit_posthocs import posthoc_nemenyi_friedman
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 
 from hpobench.utils import get_group_dict
@@ -12,6 +13,18 @@ from statsmodels.stats.multitest import multipletests
 
 
 logger = logging.getLogger(__name__)
+
+ASSOCIATION_METRIC = "mcfadden_r_squared"
+CHUNKED_COVERAGE_METRIC = "chunked_target_coverage_deviation"
+GLOBAL_COVERAGE_METRIC = "global_target_coverage_deviation"
+WIDTH_METRIC = "width"
+COVERAGE_CHUNK_SIZE = 10
+MIN_COVERAGE_CHUNKS = 3
+LOG_LIKELIHOOD_EPSILON = 1e-15
+PENALIZED_LOGISTIC_C = 1.0
+LOGISTIC_MAX_ITER = 4000
+MAX_STRATIFIED_FOLDS = 5
+MIN_STRATIFIED_FOLDS = 2
 
 
 def friedman_test_runner(
@@ -484,67 +497,152 @@ def _log_likelihood(model, X_input, y):
     Returns:
         Log-likelihood value for the model predictions.
     """
-    eps = 1e-15
-    probs = model.predict_proba(X_input)
-    return np.sum(y * np.log(probs[:, 1] + eps) + (1 - y) * np.log(probs[:, 0] + eps))
+    probabilities = model.predict_proba(X_input)[:, 1]
+    return _bernoulli_log_likelihood(y, probabilities)
+
+
+def _bernoulli_log_likelihood(y: np.ndarray, probabilities: np.ndarray) -> float:
+    """Bernoulli log-likelihood for binary labels and predicted P(y=1)."""
+    clipped_probabilities = np.clip(
+        np.asarray(probabilities, dtype=float),
+        LOG_LIKELIHOOD_EPSILON,
+        1.0 - LOG_LIKELIHOOD_EPSILON,
+    )
+    labels = np.asarray(y, dtype=float)
+    return float(
+        np.sum(
+            labels * np.log(clipped_probabilities)
+            + (1.0 - labels) * np.log(1.0 - clipped_probabilities)
+        )
+    )
+
+
+def _mcfadden_r_squared_from_likelihoods(ll_full: float, ll_null: float) -> float:
+    """Convert pooled full/null log-likelihoods to McFadden R² in [0, 1]."""
+    if not np.isfinite(ll_full) or not np.isfinite(ll_null) or ll_null == 0:
+        return 0.0
+    r_squared = 1.0 - (ll_full / ll_null)
+    if not np.isfinite(r_squared):
+        return 0.0
+    return float(np.clip(r_squared, 0.0, 1.0))
+
+
+def _constant_label_log_likelihoods(y: np.ndarray) -> tuple[float, float]:
+    """Intercept-only likelihoods when breach labels have no variation."""
+    null_probability = float(np.mean(y))
+    log_likelihood = _bernoulli_log_likelihood(
+        y, np.full(len(y), null_probability, dtype=float)
+    )
+    return log_likelihood, log_likelihood
+
+
+def _stack_configuration_features(configuration_values: pd.Series) -> np.ndarray:
+    """Stack per-trial configuration vectors into a 2-d float array."""
+    feature_rows = [
+        np.asarray(value, dtype=float).reshape(-1) for value in configuration_values
+    ]
+    return np.vstack(feature_rows)
+
+
+def _positive_class_probabilities(model: LogisticRegression, features: np.ndarray) -> np.ndarray:
+    """Return P(y=1) using the model's class order."""
+    if 1 not in model.classes_:
+        return np.zeros(len(features), dtype=float)
+    class_index = list(model.classes_).index(1)
+    return model.predict_proba(features)[:, class_index]
+
+
+def _fit_penalized_logistic(
+    features: np.ndarray,
+    labels: np.ndarray,
+    random_state: Optional[int],
+) -> LogisticRegression:
+    model = LogisticRegression(
+        penalty="l2",
+        C=PENALIZED_LOGISTIC_C,
+        solver="lbfgs",
+        fit_intercept=True,
+        max_iter=LOGISTIC_MAX_ITER,
+        random_state=random_state,
+    )
+    model.fit(features, labels)
+    return model
+
+
+def _nested_logistic_log_likelihoods(
+    X: np.ndarray,
+    y: np.ndarray,
+    random_state: Optional[int],
+) -> tuple[float, float]:
+    """Penalized out-of-fold Bernoulli log-likelihoods within one repetition.
+
+    Fits an L2-penalized logistic of breach on the configuration features in
+    stratified folds and scores the held-out trials. The null uses the training
+    fold breach rate. Constant labels, or folds that cannot be stratified,
+    yield equal likelihoods so R² = 0.
+    """
+    features = np.asarray(X, dtype=float)
+    labels = np.asarray(y)
+    if features.ndim != 2:
+        features = np.atleast_2d(features)
+    if len(features) != len(labels):
+        logger.warning(
+            f"Feature matrix and target length mismatch: {len(features)} vs {len(labels)}"
+        )
+        return 0.0, 0.0
+
+    integer_labels = np.asarray(labels, dtype=int)
+    if len(np.unique(integer_labels)) < 2:
+        return _constant_label_log_likelihoods(integer_labels)
+
+    class_counts = np.bincount(integer_labels)
+    minority = int(class_counts[class_counts > 0].min())
+    n_splits = min(MAX_STRATIFIED_FOLDS, minority)
+    if n_splits < MIN_STRATIFIED_FOLDS:
+        return _constant_label_log_likelihoods(integer_labels)
+
+    splitter = StratifiedKFold(
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=random_state,
+    )
+    full_probabilities = np.empty(len(integer_labels), dtype=float)
+    null_probabilities = np.empty(len(integer_labels), dtype=float)
+    for train_index, test_index in splitter.split(features, integer_labels):
+        scaler = StandardScaler()
+        train_features = scaler.fit_transform(features[train_index])
+        test_features = scaler.transform(features[test_index])
+        varying_columns = scaler.scale_ > 0
+        train_labels = integer_labels[train_index]
+        null_probabilities[test_index] = float(np.mean(train_labels))
+        if not np.any(varying_columns):
+            full_probabilities[test_index] = null_probabilities[test_index]
+            continue
+        model = _fit_penalized_logistic(
+            features=train_features[:, varying_columns],
+            labels=train_labels,
+            random_state=random_state,
+        )
+        full_probabilities[test_index] = _positive_class_probabilities(
+            model, test_features[:, varying_columns]
+        )
+    return (
+        _bernoulli_log_likelihood(integer_labels, full_probabilities),
+        _bernoulli_log_likelihood(integer_labels, null_probabilities),
+    )
 
 
 def _compute_mcfadden_r_squared(
     X: pd.DataFrame, y: pd.Series, random_state: Optional[int] = None
 ) -> float:
-    """Compute McFadden's pseudo-R² for a logistic regression of y on X.
-
-    Fits an intercept-only null model and a full model on all features, then
-    returns 1 - LL_full / LL_null. This is a bounded association measure for
-    whether breach indicators depend on configuration features.
-
-    Args:
-        X: Feature matrix (configuration features).
-        y: Binary outcome vector (breach indicators).
-        random_state: Random seed for reproducible results.
-
-    Returns:
-        McFadden's pseudo-R², or nan if data contains only one class or the
-        statistic is invalid.
-    """
-    if len(y.unique()) < 2:
-        return np.nan
-
-    if len(X) != len(y):
-        logger.warning(
-            f"Feature matrix and target length mismatch: {len(X)} vs {len(y)}"
-        )
-        return np.nan
-
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    null_model = LogisticRegression(
-        fit_intercept=True, random_state=random_state, max_iter=1000
+    """Compute McFadden's pseudo-R² for a single repetition."""
+    feature_matrix = X if isinstance(X, np.ndarray) else np.asarray(X, dtype=float)
+    ll_full, ll_null = _nested_logistic_log_likelihoods(
+        X=feature_matrix,
+        y=np.asarray(y),
+        random_state=random_state,
     )
-    intercept_only = np.ones((len(X_scaled), 1))
-    null_model.fit(intercept_only, y)
-    ll_null = _log_likelihood(null_model, intercept_only, y)
-
-    full_model = LogisticRegression(
-        fit_intercept=True, random_state=random_state, max_iter=1000
-    )
-    full_model.fit(X_scaled, y)
-    ll_full = _log_likelihood(full_model, X_scaled, y)
-
-    if not np.isfinite(ll_null) or not np.isfinite(ll_full) or ll_null == 0:
-        logger.warning(
-            f"Invalid log-likelihoods for McFadden R²: ll_full={ll_full}, ll_null={ll_null}"
-        )
-        return np.nan
-
-    r_squared = 1.0 - (ll_full / ll_null)
-
-    if not np.isfinite(r_squared) or r_squared < 0:
-        logger.warning(f"Invalid McFadden R² computed: {r_squared}")
-        return np.nan
-
-    return r_squared
+    return _mcfadden_r_squared_from_likelihoods(ll_full, ll_null)
 
 
 def _calculate_chunked_target_coverage_deviation(
@@ -564,13 +662,13 @@ def _calculate_chunked_target_coverage_deviation(
         Series with chunked target coverage deviation values (NaN for non-chunk start indices).
     """
     n_obs = len(group)
-    chunk_size = 10
+    chunk_size = COVERAGE_CHUNK_SIZE
     n_chunks = n_obs // chunk_size
 
     # Fix: Use positional index instead of group.index to avoid misalignment when reset_index is applied
     chunked_deviations = pd.Series([np.nan] * n_obs, index=range(n_obs))
 
-    if n_chunks > 3:
+    if n_chunks > MIN_COVERAGE_CHUNKS:
         for chunk_idx in range(n_chunks):
             start_idx = chunk_idx * chunk_size
             end_idx = start_idx + chunk_size
@@ -595,6 +693,72 @@ def _calculate_chunked_target_coverage_deviation(
     return chunked_deviations
 
 
+def _calculate_global_target_coverage_deviation(
+    group: pd.DataFrame, breach_column: str
+) -> float:
+    """Absolute gap between a trajectory's breach rate and the target miscoverage."""
+    miscoverage_level = 1.0 - float(group["confidence_level"].iloc[0])
+    if (
+        pd.isna(miscoverage_level)
+        or miscoverage_level is None
+        or miscoverage_level == "None"
+        or miscoverage_level == ""
+    ):
+        return np.nan
+    return float(abs(group[breach_column].mean() - miscoverage_level))
+
+
+def _pooled_mcfadden_r_squared(
+    experiment_log: pd.DataFrame,
+    aggregators: List[str],
+    repetition_column: str,
+    breach_column: str,
+    random_state: Optional[int],
+) -> pd.DataFrame:
+    """Cross-fit within each repetition, then n-weighted-average R² across restarts.
+
+    Averaging per-repetition R² (with weight equal to the number of trials)
+    makes a constant-label restart contribute 0 instead of dropping out of a
+    pooled likelihood ratio.
+    """
+    repetition_records = []
+    for _, group in experiment_log.groupby(aggregators):
+        group_features = _stack_configuration_features(
+            group["tabularized_configuration"]
+        )
+        r_squared = _compute_mcfadden_r_squared(
+            X=group_features,
+            y=group[breach_column],
+            random_state=random_state,
+        )
+        record = {column: group[column].iloc[0] for column in aggregators}
+        record[ASSOCIATION_METRIC] = r_squared
+        record["_n_trials"] = float(len(group))
+        repetition_records.append(record)
+
+    repetition_df = pd.DataFrame(repetition_records)
+    pooling_aggregators = [
+        column for column in aggregators if column != repetition_column
+    ]
+    pooled_rows = []
+    for group_key, pooled_group in repetition_df.groupby(
+        pooling_aggregators, sort=False
+    ):
+        if not isinstance(group_key, tuple):
+            group_key = (group_key,)
+        pooled_record = {
+            column: value
+            for column, value in zip(pooling_aggregators, group_key)
+        }
+        weights = pooled_group["_n_trials"].to_numpy(dtype=float)
+        values = pooled_group[ASSOCIATION_METRIC].to_numpy(dtype=float)
+        pooled_record[ASSOCIATION_METRIC] = float(
+            np.clip(np.average(values, weights=weights), 0.0, 1.0)
+        )
+        pooled_rows.append(pooled_record)
+    return pd.DataFrame(pooled_rows)
+
+
 def calculate_calibration_statistics_per_repetition(
     raw_benchmark_data: pd.DataFrame,
     aggregators: List[str],
@@ -602,13 +766,14 @@ def calculate_calibration_statistics_per_repetition(
     entity_column: str,
     metric_columns: List[str],
     budget_unit: str,
+    repetition_column: str,
     random_state: Optional[int] = None,
     rank_metrics: bool = True,
 ) -> pd.DataFrame:
     """Calculate calibration statistics for conformal prediction methods.
 
-    Computes various calibration metrics including chunked target coverage deviation
-    and McFadden's pseudo-R² for evaluating conformal prediction performance.
+    Computes global and chunked coverage deviation, interval width, and
+    McFadden's pseudo-R² pooled across repetitions of the same task cell.
 
     Args:
         raw_benchmark_data: Raw benchmark results with breach indicators and configurations.
@@ -617,6 +782,8 @@ def calculate_calibration_statistics_per_repetition(
         entity_column: Column name for entities being compared (e.g., tuners).
         metric_columns: List of metric column names to compute.
         budget_unit: Column name for budget/iteration unit.
+        repetition_column: Column identifying HPO restarts; R² is cross-fit
+            within this column and averaged across it with trial-count weights.
         random_state: Random seed for reproducible McFadden R² computations.
         rank_metrics: If True, rank every metric within groups. If False, rank
             only interval width (which does not share a scale across tasks) and
@@ -629,22 +796,30 @@ def calculate_calibration_statistics_per_repetition(
         by=aggregators + [budget_unit],
         ascending=True,
     ).reset_index(drop=True)
-    # Fix: Use manual concatenation instead of groupby.apply to avoid pandas version compatibility issues
-    # The original groupby.apply creates a wide DataFrame instead of properly stacking Series
+
     chunked_deviation_results = []
-    for name, group in sorted_experiment_log.groupby(aggregators):
-        series_result = _calculate_chunked_target_coverage_deviation(
+    global_deviation_results = []
+    for _, group in sorted_experiment_log.groupby(aggregators):
+        chunked_series = _calculate_chunked_target_coverage_deviation(
             group, breach_column
         )
-        # Reset index to align with the original DataFrame
-        series_result.index = group.index
-        chunked_deviation_results.append(series_result)
+        chunked_series.index = group.index
+        chunked_deviation_results.append(chunked_series)
+        global_deviation = _calculate_global_target_coverage_deviation(
+            group, breach_column
+        )
+        global_deviation_results.append(
+            pd.Series(global_deviation, index=group.index)
+        )
 
-    chunked_deviations = pd.concat(chunked_deviation_results).sort_index()
-    sorted_experiment_log["chunked_target_coverage_deviation"] = chunked_deviations
+    sorted_experiment_log[CHUNKED_COVERAGE_METRIC] = pd.concat(
+        chunked_deviation_results
+    ).sort_index()
+    sorted_experiment_log[GLOBAL_COVERAGE_METRIC] = pd.concat(
+        global_deviation_results
+    ).sort_index()
 
-    association_metric = "mcfadden_r_squared"
-    score_columns = [col for col in metric_columns if col != association_metric]
+    score_columns = [col for col in metric_columns if col != ASSOCIATION_METRIC]
 
     avg_scores_per_repetition = (
         sorted_experiment_log.groupby(aggregators)
@@ -652,29 +827,26 @@ def calculate_calibration_statistics_per_repetition(
         .reset_index()
     )
 
-    if association_metric in metric_columns:
-        def compute_group_r_squared(grp):
-            group_features = np.vstack(grp["tabularized_configuration"].values)
-            return _compute_mcfadden_r_squared(
-                pd.DataFrame(group_features), grp[breach_column], random_state
-            )
-
-        r_squared_series = sorted_experiment_log.groupby(aggregators).apply(
-            compute_group_r_squared
+    if ASSOCIATION_METRIC in metric_columns:
+        r_squared_df = _pooled_mcfadden_r_squared(
+            experiment_log=sorted_experiment_log,
+            aggregators=aggregators,
+            repetition_column=repetition_column,
+            breach_column=breach_column,
+            random_state=random_state,
         )
-        r_squared_df = r_squared_series.reset_index(name=association_metric)
+        pooling_aggregators = [
+            column for column in aggregators if column != repetition_column
+        ]
         avg_scores_per_repetition = avg_scores_per_repetition.merge(
-            r_squared_df, on=aggregators, how="left"
+            r_squared_df, on=pooling_aggregators, how="left"
         )
+        score_columns.append(ASSOCIATION_METRIC)
 
-        score_columns.append(association_metric)
-
-    # Rank after averaging across iterations (differs from search results).
-    # Width is always ranked: raw interval width does not average across tasks.
     if rank_metrics:
         metrics_to_rank = score_columns
     else:
-        metrics_to_rank = [col for col in score_columns if col == "width"]
+        metrics_to_rank = [col for col in score_columns if col == WIDTH_METRIC]
 
     for metric_column in metrics_to_rank:
         rank_groupers = [col for col in aggregators if col != entity_column]

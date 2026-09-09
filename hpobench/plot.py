@@ -1,6 +1,6 @@
 import matplotlib
 import matplotlib.pyplot as plt
-from matplotlib.gridspec import GridSpec
+from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 from matplotlib.ticker import FixedLocator, NullFormatter
 from datetime import datetime
 import pandas as pd
@@ -25,6 +25,9 @@ matplotlib.rcParams["font.family"] = "STIXGeneral"
 
 PLOT_DPI = 300
 PLOT_FORMATS = ["eps", "png", "pdf"]
+PLOT_PANEL_WIDTH = 4.0
+PLOT_PANEL_HEIGHT = 3.0
+PLOT_PANEL_BOX_ASPECT = PLOT_PANEL_HEIGHT / PLOT_PANEL_WIDTH
 DEFAULT_COLOR_PALETTE = [
     "#464646",
     "#E69F00",
@@ -81,7 +84,7 @@ def search_metric_label(metric_col: str) -> str:
 NORM_REGRET_YTOP = 1.0  # 10^0 — fixed top tick on the normalized-regret axis
 NORM_REGRET_LOG_SUBS = (2, 3, 4, 6, 8)  # five sub-decade tick marks per full decade
 NORM_REGRET_TICK_LOG_MIN_SEP = 0.12  # min log10 gap between labeled major ticks
-PANEL_LABEL_GUTTER_WIDTH = 0.45  # GridSpec width ratio for (a)/(b) label gutters
+NORM_REGRET_YBOTTOM_PAD_DECADE = 0.12  # extra log10 units below the data minimum
 
 
 def _power_of_ten_tick_label(value: float, _pos: int | None = None) -> str:
@@ -181,6 +184,7 @@ def apply_metric_yscale(
         y_bottom = y_top / 10.0
     if y_bottom >= y_top:
         y_bottom = y_top / 10.0
+    y_bottom = 10.0 ** (np.log10(y_bottom) - NORM_REGRET_YBOTTOM_PAD_DECADE)
 
     ax.set_yscale("log")
     ax.set_ylim(y_bottom, y_top)
@@ -241,18 +245,117 @@ def _apply_shared_search_row_yscale(
         ax_search.set_ylim(y_min - margin, y_max + margin)
 
 
-def _add_panel_label_gutter(fig: "plt.Figure", gs: GridSpec, row: int, col: int, label: str) -> None:
-    ax_gutter = fig.add_subplot(gs[row, col])
+def _joint_static_col_width_ratio(
+    n_sampler_cols: int,
+    b_gutter_ratio: float,
+    search_wspace: float,
+    static_gs_wspace: float = 0.08,
+) -> float:
+    """Match static-panel width to one search panel after inter-panel wspace."""
+    search_panel_divisor = n_sampler_cols + (n_sampler_cols - 1) * search_wspace
+    static_gs_divisor = 1.0 + b_gutter_ratio * (1.0 + static_gs_wspace)
+    return n_sampler_cols * static_gs_divisor / search_panel_divisor
+
+
+def _match_static_panel_to_search(
+    ax_static: "plt.Axes", ref_ax: "plt.Axes"
+) -> None:
+    """Resize the static panel to the same figure dimensions as a search panel."""
+    ref_pos = ref_ax.get_position()
+    static_pos = ax_static.get_position()
+    ax_static.set_position([static_pos.x0, ref_pos.y0, ref_pos.width, ref_pos.height])
+
+
+def _position_regret_search_row_labels(
+    fig: "plt.Figure", ax: "plt.Axes", metric_label: str
+) -> None:
+    """Place (a) and the shared y-label immediately left of tick labels."""
+    renderer = fig.canvas.get_renderer()
+    tick_labels = [
+        tick
+        for tick in ax.get_yticklabels()
+        if tick.get_visible() and tick.get_text().strip()
+    ]
+    if not tick_labels:
+        return
+
+    tick_bboxes = [
+        tick.get_window_extent(renderer).transformed(fig.transFigure.inverted())
+        for tick in tick_labels
+    ]
+    left_edge = min(bbox.x0 for bbox in tick_bboxes)
+    ax_pos = ax.get_position()
+    y_center = ax_pos.y0 + ax_pos.height / 2
+
+    ax.set_ylabel("")
+    ylab_x = left_edge - 0.004
+    fig.text(
+        ylab_x,
+        y_center,
+        f"Search {metric_label}",
+        rotation="vertical",
+        va="center",
+        ha="right",
+        fontsize=14,
+    )
+    fig.text(
+        ylab_x - 0.024,
+        y_center,
+        "(a)",
+        va="center",
+        ha="right",
+        fontsize=16,
+        fontweight="bold",
+    )
+
+
+def _joint_architecture_layout(is_regret: bool) -> dict[str, float | str]:
+    """Layout parameters for joint architecture plots (rank vs normalized regret)."""
+    if is_regret:
+        return {
+            "search_wspace": 0.08,
+            "a_gutter_ratio": 0.06,
+            "b_gutter_ratio": 0.36,
+            "outer_wspace": 0.02,
+            "fig_left": 0.07,
+            "ytick_pad": 4,
+            "ylabel_labelpad": 4,
+            "a_label_ha": "left",
+            "a_label_x": 0.0,
+        }
+    return {
+        "search_wspace": 0.22,
+        "a_gutter_ratio": 0.30,
+        "b_gutter_ratio": 0.32,
+        "outer_wspace": 0.12,
+        "fig_left": 0.09,
+        "ytick_pad": 6,
+        "ylabel_labelpad": 18,
+        "a_label_ha": "left",
+        "a_label_x": 0.02,
+    }
+
+
+def _add_panel_label_gutter(
+    fig: "plt.Figure",
+    subplot_spec,
+    label: str,
+    ha: str = "right",
+    x: float = 0.85,
+    clip_on: bool = True,
+) -> None:
+    ax_gutter = fig.add_subplot(subplot_spec)
     ax_gutter.set_axis_off()
     ax_gutter.text(
-        0.5,
+        x,
         0.5,
         label,
         transform=ax_gutter.transAxes,
-        ha="center",
+        ha=ha,
         va="center",
         fontsize=16,
         fontweight="bold",
+        clip_on=clip_on,
     )
 
 
@@ -1402,16 +1505,14 @@ def plot_joint_architecture_and_static(
     row_values = plot_data[row_measure].unique()
     samplers = sorted(plot_data[sampler_col].unique())
     n_sampler_cols = len(samplers)
-    search_col_offset = 1
-    gutter_b_col = n_sampler_cols + 1
-    static_col = n_sampler_cols + 2
-    width_ratios = (
-        [PANEL_LABEL_GUTTER_WIDTH]
-        + [1.0] * n_sampler_cols
-        + [PANEL_LABEL_GUTTER_WIDTH]
-        + [1.0]
+    is_regret = search_metric_col == "normalized_regret"
+    layout = _joint_architecture_layout(is_regret)
+    search_wspace = float(layout["search_wspace"])
+    a_gutter_ratio = float(layout["a_gutter_ratio"])
+    b_gutter_ratio = float(layout["b_gutter_ratio"])
+    static_col_ratio = _joint_static_col_width_ratio(
+        n_sampler_cols, b_gutter_ratio, search_wspace
     )
-    n_gs_cols = len(width_ratios)
 
     all_archs = sorted(
         {
@@ -1424,38 +1525,65 @@ def plot_joint_architecture_and_static(
         for idx, arch in enumerate(all_archs)
     }
 
-    base_width = 4.0
-    base_height = 3.0
-    fig_width = base_width * (n_sampler_cols + 1 + PANEL_LABEL_GUTTER_WIDTH)
-    fig_height = base_height * len(row_values)
-
-    fig = plt.figure(figsize=(fig_width, fig_height))
-    gs = GridSpec(
-        nrows=len(row_values),
-        ncols=n_gs_cols,
-        figure=fig,
-        width_ratios=width_ratios,
-        wspace=0.28,
-        hspace=0.22,
-    )
+    fig_width = PLOT_PANEL_WIDTH * (n_sampler_cols + 1)
+    fig_height = PLOT_PANEL_HEIGHT * len(row_values)
 
     legend_handles: list = []
     legend_labels: list = []
+    legend_ncols = compute_legend_ncols(len(all_archs)) if all_archs else 1
+    num_legend_rows = math.ceil(len(all_archs) / legend_ncols) if all_archs else 1
+    _, legend_bottom_margin = calculate_legend_position(
+        len(row_values), num_legend_rows, "standard"
+    )
 
+    fig = plt.figure(figsize=(fig_width, fig_height))
+    outer_gs = GridSpec(
+        nrows=len(row_values),
+        ncols=3,
+        figure=fig,
+        width_ratios=[a_gutter_ratio, n_sampler_cols, static_col_ratio],
+        wspace=float(layout["outer_wspace"]),
+        hspace=0.22,
+        left=float(layout["fig_left"]),
+        right=0.98,
+        top=0.90,
+        bottom=legend_bottom_margin,
+    )
+
+    static_axis_pairs: list[tuple["plt.Axes", "plt.Axes"]] = []
     for i, row_value in enumerate(row_values):
-        _add_panel_label_gutter(fig, gs, i, 0, "(a)")
-        _add_panel_label_gutter(fig, gs, i, gutter_b_col, "(b)")
+        search_gs = GridSpecFromSubplotSpec(
+            nrows=1,
+            ncols=n_sampler_cols,
+            subplot_spec=outer_gs[i, 1],
+            wspace=search_wspace,
+        )
+        static_gs = GridSpecFromSubplotSpec(
+            nrows=1,
+            ncols=2,
+            subplot_spec=outer_gs[i, 2],
+            width_ratios=[b_gutter_ratio, 1.0],
+            wspace=0.08,
+        )
+        if not is_regret:
+            _add_panel_label_gutter(
+                fig,
+                outer_gs[i, 0],
+                "(a)",
+                ha=str(layout["a_label_ha"]),
+                x=float(layout["a_label_x"]),
+            )
+        _add_panel_label_gutter(fig, static_gs[0, 0], "(b)", ha="left", x=0.0)
 
         main_row_data = plot_data[plot_data[row_measure] == row_value]
 
         search_axes = []
         for j, sampler in enumerate(samplers):
+            search_spec = search_gs[0, j]
             if j == 0:
-                ax_search = fig.add_subplot(gs[i, search_col_offset + j])
+                ax_search = fig.add_subplot(search_spec)
             else:
-                ax_search = fig.add_subplot(
-                    gs[i, search_col_offset + j], sharey=search_axes[0]
-                )
+                ax_search = fig.add_subplot(search_spec, sharey=search_axes[0])
             search_axes.append(ax_search)
             sampler_data = main_row_data[main_row_data[sampler_col] == sampler]
 
@@ -1493,11 +1621,12 @@ def plot_joint_architecture_and_static(
                     )
 
             ax_search.set_xlabel(search_x_col_label, fontsize=14)
-            ax_search.set_ylabel(
-                f"Search {search_metric_label(search_metric_col)}",
-                fontsize=14,
-                labelpad=10,
-            )
+            if j == 0:
+                ax_search.tick_params(
+                    axis="y", which="major", pad=float(layout["ytick_pad"])
+                )
+            else:
+                ax_search.tick_params(axis="y", which="both", labelleft=False)
             ax_search.set_title(
                 joint_plot_sampler_label(sampler),
                 fontsize=14,
@@ -1508,10 +1637,23 @@ def plot_joint_architecture_and_static(
                 ax_search.spines[spine].set_linewidth(1.2)
             ax_search.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
             ax_search.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
+            ax_search.set_box_aspect(PLOT_PANEL_BOX_ASPECT)
 
         _apply_shared_search_row_yscale(search_axes, main_row_data, search_metric_col)
-
-        ax_static = fig.add_subplot(gs[i, static_col])
+        for j, ax_search in enumerate(search_axes):
+            if j > 0:
+                ax_search.tick_params(axis="y", which="both", labelleft=False)
+            else:
+                ax_search.tick_params(
+                    axis="y", which="major", pad=float(layout["ytick_pad"])
+                )
+                if not is_regret:
+                    ax_search.set_ylabel(
+                        f"Search {search_metric_label(search_metric_col)}",
+                        fontsize=14,
+                        labelpad=float(layout["ylabel_labelpad"]),
+                    )
+        ax_static = fig.add_subplot(static_gs[0, 1])
         static_row_data = static_processed_df[static_processed_df[row_measure] == row_value]
 
         for arch in sorted(static_row_data[arch_col].unique()):
@@ -1536,11 +1678,24 @@ def plot_joint_architecture_and_static(
             ax_static.spines[spine].set_linewidth(1.2)
         ax_static.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
         ax_static.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
+        if search_axes:
+            static_axis_pairs.append((ax_static, search_axes[0]))
+        else:
+            ax_static.set_box_aspect(PLOT_PANEL_BOX_ASPECT)
+
+    if static_axis_pairs:
+        fig.canvas.draw()
+        for ax_static, ref_ax in static_axis_pairs:
+            _match_static_panel_to_search(ax_static, ref_ax)
+            if is_regret:
+                _position_regret_search_row_labels(
+                    fig, ref_ax, search_metric_label(search_metric_col)
+                )
 
     handles, labels = sort_legend_items(legend_handles, legend_labels)
     legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
     num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
-    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
+    legend_anchor_y, _ = calculate_legend_position(
         len(row_values), num_legend_rows, "standard"
     )
 
@@ -1554,15 +1709,6 @@ def plot_joint_architecture_and_static(
             bbox_to_anchor=(0.5, legend_anchor_y),
             frameon=False,
         )
-
-    fig.subplots_adjust(
-        wspace=0.28,
-        hspace=0.22,
-        bottom=legend_bottom_margin,
-        top=0.90,
-        left=0.08,
-        right=0.98,
-    )
 
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     for fmt in PLOT_FORMATS:

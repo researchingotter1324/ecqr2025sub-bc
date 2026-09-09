@@ -8,6 +8,9 @@ from hpobench.report.metrics import (
     permutation_pairwise_test,
     _log_likelihood,
     _compute_mcfadden_r_squared,
+    _mcfadden_r_squared_from_likelihoods,
+    _nested_logistic_log_likelihoods,
+    _stack_configuration_features,
     calculate_calibration_statistics_per_repetition,
 )
 
@@ -522,7 +525,7 @@ def test_log_likelihood_function():
 
 
 def test_compute_mcfadden_r_squared_independent_data(independent_X_y_data):
-    """McFadden R² is small when features are independent of the outcome."""
+    """Penalized out-of-fold McFadden R² is small when features are independent of y."""
     X, y = independent_X_y_data
 
     statistic = _compute_mcfadden_r_squared(X, y, random_state=42)
@@ -533,27 +536,27 @@ def test_compute_mcfadden_r_squared_independent_data(independent_X_y_data):
 
 
 def test_compute_mcfadden_r_squared_dependent_data(dependent_X_y_data):
-    """McFadden R² is substantially above chance when y is a function of X."""
+    """Penalized out-of-fold McFadden R² is above chance when y is a function of X."""
     X, y = dependent_X_y_data
 
     statistic = _compute_mcfadden_r_squared(X, y, random_state=42)
 
     assert np.isfinite(statistic)
     assert 0.0 <= statistic <= 1.0
-    assert statistic > 0.2
+    assert statistic > 0.1
 
 
 def test_compute_mcfadden_r_squared_single_class(single_class_y_data):
-    """McFadden R² is undefined when y has only one class."""
+    """Constant labels contribute no association (R² = 0)."""
     X, y = single_class_y_data
 
     statistic = _compute_mcfadden_r_squared(X, y, random_state=42)
 
-    assert np.isnan(statistic)
+    assert statistic == 0.0
 
 
 def test_compute_mcfadden_r_squared_comparison():
-    """Dependent features yield a larger McFadden R² than independent features."""
+    """Dependent features yield a larger penalized out-of-fold McFadden R² than independent features."""
     np.random.seed(123)
     X_indep = pd.DataFrame(np.random.randn(50, 2), columns=["f1", "f2"])
     y_indep = pd.Series(np.random.binomial(1, 0.5, 50))
@@ -581,30 +584,31 @@ def test_calculate_calibration_statistics_per_repetition_ranking(rank_metrics):
     expected_coverage = {tuner: abs(rate - 0.5) for tuner, rate in breach_rates.items()}
     rows = []
     for dataset in ["d1", "d2"]:
-        for tuner in tuners:
-            ones_per_chunk = int(round(10 * breach_rates[tuner]))
-            chunk_pattern = [1] * ones_per_chunk + [0] * (10 - ones_per_chunk)
-            breaches = np.array(chunk_pattern * (n_iterations // 10))
-            for iteration in range(n_iterations):
-                rows.append(
-                    {
-                        "benchmark_identifier": "bench",
-                        "dataset": dataset,
-                        "tuner": tuner,
-                        "repetition": 0,
-                        "sampler": "s",
-                        "confidence_level": 0.5,
-                        "estimator_architecture": "arch",
-                        "iteration": iteration,
-                        "breach_status": int(breaches[iteration]),
-                        "width": widths[tuner],
-                        "winkler_score": widths[tuner],
-                        "miscoverage_penalty": 0.0,
-                        "tabularized_configuration": np.array(
-                            [float(iteration), float(widths[tuner])]
-                        ),
-                    }
-                )
+        for repetition in [0, 1]:
+            for tuner in tuners:
+                ones_per_chunk = int(round(10 * breach_rates[tuner]))
+                chunk_pattern = [1] * ones_per_chunk + [0] * (10 - ones_per_chunk)
+                breaches = np.array(chunk_pattern * (n_iterations // 10))
+                for iteration in range(n_iterations):
+                    rows.append(
+                        {
+                            "benchmark_identifier": "bench",
+                            "dataset": dataset,
+                            "tuner": tuner,
+                            "repetition": repetition,
+                            "sampler": "s",
+                            "confidence_level": 0.5,
+                            "estimator_architecture": "arch",
+                            "iteration": iteration,
+                            "breach_status": int(breaches[iteration]),
+                            "width": widths[tuner],
+                            "winkler_score": widths[tuner],
+                            "miscoverage_penalty": 0.0,
+                            "tabularized_configuration": np.array(
+                                [float(iteration), float(widths[tuner])]
+                            ),
+                        }
+                    )
     raw = pd.DataFrame(rows)
     aggregators = [
         "benchmark_identifier",
@@ -625,34 +629,52 @@ def test_calculate_calibration_statistics_per_repetition_ranking(rank_metrics):
             "width",
             "miscoverage_penalty",
             "chunked_target_coverage_deviation",
+            "global_target_coverage_deviation",
             "mcfadden_r_squared",
         ],
         budget_unit="iteration",
+        repetition_column="repetition",
         random_state=42,
         rank_metrics=rank_metrics,
     )
 
-    assert len(result) == 6
+    assert len(result) == 12
     assert set(result["tuner"]) == set(tuners)
     width_by_tuner = result.groupby("tuner")["width"].mean()
     assert width_by_tuner["A"] == 1.0
     assert width_by_tuner["B"] == 2.0
     assert width_by_tuner["C"] == 3.0
 
-    coverage_by_tuner = result.groupby("tuner")["chunked_target_coverage_deviation"].mean()
+    chunked_by_tuner = result.groupby("tuner")[
+        "chunked_target_coverage_deviation"
+    ].mean()
+    global_by_tuner = result.groupby("tuner")["global_target_coverage_deviation"].mean()
     r_squared_by_tuner = result.groupby("tuner")["mcfadden_r_squared"].mean()
     if rank_metrics:
-        assert coverage_by_tuner["A"] == 1.0
-        assert coverage_by_tuner["B"] == 2.0
-        assert coverage_by_tuner["C"] == 3.0
+        assert chunked_by_tuner["A"] == 1.0
+        assert chunked_by_tuner["B"] == 2.0
+        assert chunked_by_tuner["C"] == 3.0
+        assert global_by_tuner["A"] == 1.0
+        assert global_by_tuner["B"] == 2.0
+        assert global_by_tuner["C"] == 3.0
         assert r_squared_by_tuner.min() >= 1.0
         assert r_squared_by_tuner.max() <= 3.0
     else:
-        assert coverage_by_tuner["A"] == pytest.approx(expected_coverage["A"])
-        assert coverage_by_tuner["B"] == pytest.approx(expected_coverage["B"])
-        assert coverage_by_tuner["C"] == pytest.approx(expected_coverage["C"])
+        assert chunked_by_tuner["A"] == pytest.approx(expected_coverage["A"])
+        assert chunked_by_tuner["B"] == pytest.approx(expected_coverage["B"])
+        assert chunked_by_tuner["C"] == pytest.approx(expected_coverage["C"])
+        assert global_by_tuner["A"] == pytest.approx(expected_coverage["A"])
+        assert global_by_tuner["B"] == pytest.approx(expected_coverage["B"])
+        assert global_by_tuner["C"] == pytest.approx(expected_coverage["C"])
         assert r_squared_by_tuner.min() >= 0.0
         assert r_squared_by_tuner.max() <= 1.0
+        for dataset in ["d1", "d2"]:
+            for tuner in tuners:
+                pooled_r_squared = result.loc[
+                    (result["tuner"] == tuner) & (result["dataset"] == dataset),
+                    "mcfadden_r_squared",
+                ]
+                assert pooled_r_squared.nunique() == 1
 
 
 @pytest.mark.parametrize(
@@ -778,3 +800,146 @@ def test_correction_methods_comparison(extreme_significant_data):
     # Both should be valid p-values
     assert 0 <= mean_holm_corrected <= 1
     assert 0 <= mean_bh_corrected <= 1
+
+
+def test_mcfadden_end_to_end_fit_and_aggregation(mcfadden_end_to_end_calibration_data):
+    """Penalized out-of-fold logistic recovers x-dependent breaches through aggregation."""
+    raw = mcfadden_end_to_end_calibration_data
+    aggregators = [
+        "benchmark_identifier",
+        "dataset",
+        "tuner",
+        "repetition",
+        "sampler",
+        "confidence_level",
+        "estimator_architecture",
+    ]
+    dependent_slice = raw[
+        (raw["tuner"] == "Cross conformalized LBS")
+        & (raw["dataset"] == "3945")
+        & (raw["repetition"] == 0)
+    ]
+    independent_slice = raw[
+        (raw["tuner"] == "Unconformalized GP")
+        & (raw["dataset"] == "3945")
+        & (raw["repetition"] == 0)
+    ]
+    dependent_features = _stack_configuration_features(
+        dependent_slice["tabularized_configuration"]
+    )
+    independent_features = _stack_configuration_features(
+        independent_slice["tabularized_configuration"]
+    )
+    assert dependent_features.shape == (50, 7)
+    dependent_labels = dependent_slice["breach_status"].to_numpy()
+    independent_labels = independent_slice["breach_status"].to_numpy()
+
+    ll_full_dep, ll_null_dep = _nested_logistic_log_likelihoods(
+        X=dependent_features,
+        y=dependent_labels,
+        random_state=42,
+    )
+    ll_full_indep, ll_null_indep = _nested_logistic_log_likelihoods(
+        X=independent_features,
+        y=independent_labels,
+        random_state=42,
+    )
+    dependent_r_squared = _mcfadden_r_squared_from_likelihoods(ll_full_dep, ll_null_dep)
+    independent_r_squared = _mcfadden_r_squared_from_likelihoods(
+        ll_full_indep, ll_null_indep
+    )
+    assert 0.0 <= dependent_r_squared <= 1.0
+    assert 0.0 <= independent_r_squared <= 1.0
+    assert dependent_r_squared > independent_r_squared
+
+    result = calculate_calibration_statistics_per_repetition(
+        raw_benchmark_data=raw,
+        aggregators=aggregators,
+        breach_column="breach_status",
+        entity_column="tuner",
+        metric_columns=[
+            "winkler_score",
+            "width",
+            "miscoverage_penalty",
+            "chunked_target_coverage_deviation",
+            "global_target_coverage_deviation",
+            "mcfadden_r_squared",
+        ],
+        budget_unit="iteration",
+        repetition_column="repetition",
+        random_state=42,
+        rank_metrics=False,
+    )
+    assert len(result) == 8
+    r_squared_by_tuner = result.groupby("tuner")["mcfadden_r_squared"].mean()
+    assert (
+        r_squared_by_tuner["Cross conformalized LBS"]
+        > r_squared_by_tuner["Unconformalized GP"]
+    )
+
+
+def test_pooled_mcfadden_counts_constant_label_repetition_as_zero():
+    """A never-breaching restart contributes R² = 0 with weight n, not a dropped term."""
+    rng = np.random.RandomState(11)
+    n_iterations = 40
+    rows = []
+    features_signal = rng.normal(size=(n_iterations, 4))
+    logits = 3.0 * features_signal[:, 0]
+    probabilities = 1.0 / (1.0 + np.exp(-logits))
+    signal_breaches = rng.binomial(1, probabilities)
+    signal_breaches[0] = 0
+    signal_breaches[1] = 1
+    for repetition, breaches, features in (
+        (0, signal_breaches, features_signal),
+        (1, np.zeros(n_iterations, dtype=int), rng.normal(size=(n_iterations, 4))),
+    ):
+        for iteration in range(n_iterations):
+            rows.append(
+                {
+                    "benchmark_identifier": "LCBench",
+                    "dataset": "3945",
+                    "tuner": "Cross conformalized LBS",
+                    "repetition": repetition,
+                    "sampler": "s",
+                    "confidence_level": 0.5,
+                    "estimator_architecture": "arch",
+                    "iteration": iteration,
+                    "breach_status": int(breaches[iteration]),
+                    "width": 1.0,
+                    "winkler_score": 1.0,
+                    "miscoverage_penalty": 0.0,
+                    "tabularized_configuration": features[iteration].tolist(),
+                }
+            )
+    raw = pd.DataFrame(rows)
+    aggregators = [
+        "benchmark_identifier",
+        "dataset",
+        "tuner",
+        "repetition",
+        "sampler",
+        "confidence_level",
+        "estimator_architecture",
+    ]
+    signal_only = raw[raw["repetition"] == 0]
+    signal_r_squared = _compute_mcfadden_r_squared(
+        X=_stack_configuration_features(signal_only["tabularized_configuration"]),
+        y=signal_only["breach_status"],
+        random_state=42,
+    )
+    result = calculate_calibration_statistics_per_repetition(
+        raw_benchmark_data=raw,
+        aggregators=aggregators,
+        breach_column="breach_status",
+        entity_column="tuner",
+        metric_columns=["width", "mcfadden_r_squared"],
+        budget_unit="iteration",
+        repetition_column="repetition",
+        random_state=42,
+        rank_metrics=False,
+    )
+    pooled = result["mcfadden_r_squared"].iloc[0]
+    assert signal_r_squared > 0.15
+    assert pooled == pytest.approx(0.5 * signal_r_squared, rel=1e-6)
+    assert len(result) == 2
+    assert result["mcfadden_r_squared"].nunique() == 1

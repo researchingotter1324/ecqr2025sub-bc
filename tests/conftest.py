@@ -1747,3 +1747,55 @@ def single_class_y_data():
     y = pd.Series(np.ones(n_samples, dtype=int))
 
     return X, y
+
+
+@pytest.fixture
+def mcfadden_end_to_end_calibration_data():
+    """Semi-realistic HPO logs for end-to-end McFadden R² checks.
+
+    Configurations are 7-d LCBench-like vectors stored as Python lists. One
+    tuner has breaches independent of x; the other has a strong logit link to
+    the first two coordinates. Trajectories are long enough for penalized
+    stratified CV and for chunked coverage windows.
+    """
+    rng = np.random.RandomState(7)
+    n_iterations = 50
+    n_features = 7
+    rows = []
+    for dataset in ["3945", "7593"]:
+        for repetition in [0, 1]:
+            for tuner, depends_on_x in (
+                ("Unconformalized GP", False),
+                ("Cross conformalized LBS", True),
+            ):
+                features = rng.normal(size=(n_iterations, n_features))
+                if depends_on_x:
+                    logits = 2.8 * features[:, 0] - 2.0 * features[:, 1]
+                    probabilities = 1.0 / (1.0 + np.exp(-logits))
+                    breaches = rng.binomial(1, probabilities)
+                    width = 4.0
+                else:
+                    breaches = rng.binomial(1, 0.45, size=n_iterations)
+                    width = 1.0
+                if int(breaches.min()) == int(breaches.max()):
+                    breaches[0] = 0
+                    breaches[1] = 1
+                for iteration in range(n_iterations):
+                    rows.append(
+                        {
+                            "benchmark_identifier": "LCBench",
+                            "dataset": dataset,
+                            "tuner": tuner,
+                            "repetition": repetition,
+                            "sampler": "s",
+                            "confidence_level": 0.5,
+                            "estimator_architecture": "arch",
+                            "iteration": iteration,
+                            "breach_status": int(breaches[iteration]),
+                            "width": width,
+                            "winkler_score": width,
+                            "miscoverage_penalty": 0.0,
+                            "tabularized_configuration": features[iteration].tolist(),
+                        }
+                    )
+    return pd.DataFrame(rows)

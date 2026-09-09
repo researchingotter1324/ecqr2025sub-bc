@@ -1,6 +1,13 @@
 import pandas as pd
 from typing import List, Optional
 
+CALIBRATION_SCORE_DECIMALS = 3
+CALIBRATION_METHOD_ORDER = [
+    "Unconformalized",
+    "Split Conformalized",
+    "Cross Conformalized",
+]
+
 
 def _escape_latex_text(text: str) -> str:
     """Escape underscores in text for LaTeX rendering.
@@ -15,7 +22,7 @@ def _escape_latex_text(text: str) -> str:
 
 
 def _format_score_with_interval(
-    mean_val: float, lower_val: float, upper_val: float, is_best: bool
+    mean_val: float, lower_val: float, upper_val: float, is_best: bool, decimals: int
 ) -> str:
     """Format a score with confidence interval for LaTeX table display.
 
@@ -24,12 +31,13 @@ def _format_score_with_interval(
         lower_val: Lower bound of confidence interval.
         upper_val: Upper bound of confidence interval.
         is_best: Whether this is the best score (for bold formatting).
+        decimals: Number of digits after the decimal point.
 
     Returns:
         LaTeX-formatted string with score and interval.
     """
-    mean_str = f"{mean_val:.3f}"
-    interval_str = f"\\small{{[{lower_val:.3f}, {upper_val:.3f}]}}"
+    mean_str = f"{mean_val:.{decimals}f}"
+    interval_str = f"\\small{{[{lower_val:.{decimals}f}, {upper_val:.{decimals}f}]}}"
 
     if is_best:
         return f"\\normalsize{{\\textbf{{{mean_str}}}}} \\\\ {interval_str}"
@@ -48,14 +56,14 @@ def _get_calibration_metrics_caption(rank_metrics: bool) -> str:
     if rank_metrics:
         return (
             "Calibration performance rank by calibration metric. "
-            "Chunked coverage deviation, McFadden's pseudo-$R^2$, and interval width "
+            "Chunked and global coverage deviation, McFadden's pseudo-$R^2$, and interval width "
             "are computed for intervals at 25\\%, 50\\% and 75\\% confidence on all LCbench datasets, "
             "then ranked across frameworks within each interval confidence and dataset. "
             "Individual ranks are then averaged by framework to demonstrate cross-confidence and cross-dataset performance."
         )
     return (
         "Calibration performance by metric. "
-        "Chunked coverage deviation and McFadden's pseudo-$R^2$ are averaged in native units "
+        "Chunked coverage deviation, global coverage deviation, and McFadden's pseudo-$R^2$ are averaged in native units "
         "across interval confidences and datasets. "
         "Interval width is ranked within each interval confidence and dataset, then averaged, "
         "because raw width does not share a scale across tasks."
@@ -117,6 +125,26 @@ def _parse_and_group_entities(df_block: pd.DataFrame) -> dict:
     return grouped
 
 
+def _formatted_metric_minipage(
+    row_data: pd.Series, metric: str, best_values: dict
+) -> str:
+    mean_col = metric
+    lower_col = f"{metric}_lower"
+    upper_col = f"{metric}_upper"
+    if not all(col in row_data.index for col in [mean_col, lower_col, upper_col]):
+        return "--"
+    mean_val = row_data[mean_col]
+    is_best = metric in best_values and mean_val == best_values[metric]
+    formatted_metric = _format_score_with_interval(
+        mean_val=mean_val,
+        lower_val=row_data[lower_col],
+        upper_val=row_data[upper_col],
+        is_best=is_best,
+        decimals=CALIBRATION_SCORE_DECIMALS,
+    )
+    return f"\\begin{{minipage}}{{3cm}}\\centering {formatted_metric} \\end{{minipage}}"
+
+
 def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str) -> str:
     """Build a LaTeX table block for calibration metrics.
 
@@ -128,11 +156,13 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
         LaTeX table string for the calibration metrics.
     """
     target_metrics = [
+        "global_target_coverage_deviation",
         "chunked_target_coverage_deviation",
         "mcfadden_r_squared",
         "width",
     ]
     metric_titles = {
+        "global_target_coverage_deviation": "Global Target Coverage Deviation",
         "chunked_target_coverage_deviation": "Chunked Target Coverage Deviation",
         "mcfadden_r_squared": "McFadden $R^2$",
         "width": "Width",
@@ -154,10 +184,9 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
     # Find best (minimum) values for each metric to bold them
     best_values = {}
     for metric in available_metrics:
-        # Use the original metric name for the mean column.
-        mean_col = metric
-        best_values[metric] = df_block[mean_col].min()
+        best_values[metric] = df_block[metric].min()
 
+    grouped_entities = _parse_and_group_entities(df_block)
     lines: List[str] = [
         "\\begin{table}[htbp]",
         "\\centering",
@@ -176,13 +205,7 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
     lines.append(" & ".join(header_parts) + " \\\\")
     lines.append("\\midrule")
 
-    # Parse and group entities
-    grouped_entities = _parse_and_group_entities(df_block)
-
-    # Define method order
-    method_order = ["Unconformalized", "Split Conformalized", "Cross Conformalized"]
-
-    for method in method_order:
+    for method in CALIBRATION_METHOD_ORDER:
         if method not in grouped_entities:
             continue
 
@@ -194,31 +217,9 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
             row_data = method_data["default"]
 
             for metric in available_metrics:
-                mean_col = metric
-                lower_col = f"{metric}_lower"
-                upper_col = f"{metric}_upper"
-
-                if all(
-                    col in row_data.index for col in [mean_col, lower_col, upper_col]
-                ):
-                    mean_val = row_data[mean_col]
-                    lower_val = row_data[lower_col]
-                    upper_val = row_data[upper_col]
-
-                    # Check if this is the best value for this metric
-                    is_best = (
-                        metric in best_values
-                        and abs(mean_val - best_values[metric]) < 1e-10
-                    )
-
-                    formatted_metric = _format_score_with_interval(
-                        mean_val, lower_val, upper_val, is_best
-                    )
-                    row_parts.append(
-                        f"\\begin{{minipage}}{{3cm}}\\centering {formatted_metric} \\end{{minipage}}"
-                    )
-                else:
-                    row_parts.append("--")
+                row_parts.append(
+                    _formatted_metric_minipage(row_data, metric, best_values)
+                )
 
             lines.append(" & ".join(row_parts) + " \\\\")
 
@@ -231,38 +232,18 @@ def _build_calibration_metrics_table_block(df_block: pd.DataFrame, caption: str)
             row_data = method_data[adapter]
 
             for metric in available_metrics:
-                mean_col = metric
-                lower_col = f"{metric}_lower"
-                upper_col = f"{metric}_upper"
-
-                if all(
-                    col in row_data.index for col in [mean_col, lower_col, upper_col]
-                ):
-                    mean_val = row_data[mean_col]
-                    lower_val = row_data[lower_col]
-                    upper_val = row_data[upper_col]
-
-                    # Check if this is the best value for this metric
-                    is_best = (
-                        metric in best_values
-                        and abs(mean_val - best_values[metric]) < 1e-10
-                    )
-
-                    formatted_metric = _format_score_with_interval(
-                        mean_val, lower_val, upper_val, is_best
-                    )
-                    row_parts.append(
-                        f"\\begin{{minipage}}{{3cm}}\\centering {formatted_metric} \\end{{minipage}}"
-                    )
-                else:
-                    row_parts.append("--")
+                row_parts.append(
+                    _formatted_metric_minipage(row_data, metric, best_values)
+                )
 
             lines.append(" & ".join(row_parts) + " \\\\")
 
         # Add spacing after each method group except the last
-        if method != method_order[-1] and any(
+        if method != CALIBRATION_METHOD_ORDER[-1] and any(
             m in grouped_entities
-            for m in method_order[method_order.index(method) + 1 :]
+            for m in CALIBRATION_METHOD_ORDER[
+                CALIBRATION_METHOD_ORDER.index(method) + 1 :
+            ]
         ):
             lines.append("")
 

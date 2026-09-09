@@ -25,7 +25,7 @@ class ExperimentParameters(BaseModel):
         large_n_repetitions_per_tuner_config: Repetitions for large experiments.
     """
 
-    n_trials: Optional[int] = 40
+    n_trials: Optional[int] = 75
     n_coverage_trials: int = 75
 
     timeout: Optional[int] = None
