@@ -38,9 +38,8 @@ class ExperimentParameters(BaseModel):
     static_tuning_iterations: List[int] = [0]
     static_n_quantiles: int = 10
 
-    medium_n_repetitions_per_tuner_config: int = 2
+    medium_n_repetitions_per_tuner_config: int = 25
     large_n_repetitions_per_tuner_config: int = medium_n_repetitions_per_tuner_config 
-
 
 class Aliases(BaseModel):
     """Human-readable aliases for various benchmark components.
