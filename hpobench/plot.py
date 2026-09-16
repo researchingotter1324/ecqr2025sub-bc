@@ -28,28 +28,32 @@ PLOT_FORMATS = ["eps", "png", "pdf"]
 PLOT_PANEL_WIDTH = 4.0
 PLOT_PANEL_HEIGHT = 3.0
 PLOT_PANEL_BOX_ASPECT = PLOT_PANEL_HEIGHT / PLOT_PANEL_WIDTH
+# First 13 colors are spaced around the hue wheel and kept dark enough for
+# white backgrounds and translucent confidence-interval bands. Pale yellow
+# and sky-blue from Okabe–Ito / the previous palette washed out under fill.
 DEFAULT_COLOR_PALETTE = [
-    "#464646",
-    "#E69F00",
-    "#56B4E9",
-    "#009E73",
-    "#F0E442",
-    "#0072B2",
-    "#D55E00",
-    "#CC79A7",
-    "#E74C3C",
-    "#3498DB",
-    "#2ECC71",
-    "#F39C12",
-    "#9B59B6",
-    "#1ABC9C",
-    "#E67E22",
-    "#34495E",
-    "#16A085",
-    "#27AE60",
-    "#2980B9",
-    "#8E44AD",
+    "#2B2B2B",
+    "#BE1E2D",
+    "#E07000",
+    "#8A6D00",
+    "#2E7D32",
+    "#00838F",
+    "#1565C0",
+    "#4527A0",
+    "#8E24AA",
+    "#C2185B",
+    "#6D4C41",
+    "#6B8E23",
+    "#F4511E",
+    "#5C6BC0",
+    "#00695C",
+    "#9E9D24",
+    "#880E4F",
+    "#1A237E",
+    "#5D4037",
+    "#0277BD",
 ]
+QGBM_TS_LEGEND_CITATION = " (Salinas et al., 2023)"
 
 
 def get_label(label: Optional[str], default: Optional[str]) -> Optional[str]:
@@ -623,7 +627,9 @@ def display_entity_label(label: str) -> str:
     """Normalize entity labels for display (e.g. drop NL- prefix for UCB)."""
     label = str(label)
     if is_ucb_entity(label) and label.startswith("NL-"):
-        return label[3:]
+        label = label[3:]
+    if re.fullmatch(r"(NL-)?QGBM-TS", label):
+        label = f"{label}{QGBM_TS_LEGEND_CITATION}"
     return label
 
 

@@ -26,6 +26,7 @@ from hpobench.report.utils import generate_configs_per_repetition
 from hpobench.utils import (
     generate_hyperparameter_combinations,
     add_runtime,
+    save_analysis_results,
 )
 from hpobench.prepare import (
     setup_yahpo_instance_configs,
@@ -645,6 +646,9 @@ def run_and_analyze_joint_benchmark(
         n_pre_conformal_trials=min(experiment_params.static_tuning_iterations) - 1 if min(experiment_params.static_tuning_iterations) > 0 else 0,
         max_n_instances=experiment_params.default_max_n_instances,
         base_random_state=base_random_state,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        analysis_type=analysis_type,
     )
 
     analyze_joint_architecture_and_static(
@@ -801,6 +805,9 @@ def run_static_benchmark(
     n_quantiles: int,
     n_pre_conformal_trials: int,
     max_n_instances: int,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
     base_random_state: Optional[int] = None,
 ) -> pd.DataFrame:
     """Evaluate conformal prediction estimator architectures in controlled static setting.
@@ -858,6 +865,9 @@ def run_static_benchmark(
         max_n_instances: Maximum number of dataset instances to use per benchmark,
             controlling the scope of the evaluation. Use smaller values for initial
             analysis or resource-limited environments.
+        cache_path: Cache root used to persist ``static_raw_benchmark_data.csv``.
+        run_start_str: Experiment folder identifier under ``cache/experiments``.
+        analysis_type: Destination analysis key, including the benchmark subfolder.
 
     Returns:
         DataFrame containing estimator evaluation results with columns:
@@ -1115,4 +1125,12 @@ def run_static_benchmark(
         gc.collect()
 
     logger.info("Estimator Error Analysis finished.")
-    return pd.DataFrame(estimator_error_results)
+    results_df = pd.DataFrame(estimator_error_results)
+    save_analysis_results(
+        df=results_df,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        filename="static_raw_benchmark_data.csv",
+        analysis_type=analysis_type,
+    )
+    return results_df

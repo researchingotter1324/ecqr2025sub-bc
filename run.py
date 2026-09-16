@@ -183,7 +183,7 @@ def main():
                 base_random_state=BASE_RANDOM_STATE,
                 cache_path=CACHE_PATH,
                 run_start_str=run_start_str,
-                analysis_type="04_external_tuning",
+                analysis_type="04_categorical_external_tuning",
                 max_n_instances_per_benchmark=experiment_params.default_max_n_instances,
                 n_repetitions=experiment_params.medium_n_repetitions_per_tuner_config,
                 analysis_components=[
