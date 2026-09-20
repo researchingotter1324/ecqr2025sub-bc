@@ -28,30 +28,29 @@ PLOT_FORMATS = ["eps", "png", "pdf"]
 PLOT_PANEL_WIDTH = 4.0
 PLOT_PANEL_HEIGHT = 3.0
 PLOT_PANEL_BOX_ASPECT = PLOT_PANEL_HEIGHT / PLOT_PANEL_WIDTH
-# First 13 colors are spaced around the hue wheel and kept dark enough for
-# white backgrounds and translucent confidence-interval bands. Pale yellow
-# and sky-blue from Okabe–Ito / the previous palette washed out under fill.
+# Okabe–Ito plus a few extras: pale yellow swapped for a mid green, and the
+# near-duplicate light oranges/browns dropped from the early slots.
 DEFAULT_COLOR_PALETTE = [
-    "#2B2B2B",
-    "#BE1E2D",
-    "#E07000",
-    "#8A6D00",
-    "#2E7D32",
-    "#00838F",
-    "#1565C0",
-    "#4527A0",
-    "#8E24AA",
-    "#C2185B",
-    "#6D4C41",
-    "#6B8E23",
-    "#F4511E",
-    "#5C6BC0",
-    "#00695C",
-    "#9E9D24",
-    "#880E4F",
-    "#1A237E",
-    "#5D4037",
-    "#0277BD",
+    "#464646",
+    "#E69F00",
+    "#56B4E9",
+    "#009E73",
+    "#b2de92",
+    "#0e5278",
+    "#D55E00",
+    "#CC79A7",
+    "#E74C3C",
+    "#9B59B6",
+    "#d69e5e",
+    "#961515",
+    "#dd85e6",
+    "#16A085",
+    "#27AE60",
+    "#2980B9",
+    "#8E44AD",
+    "#1ABC9C",
+    "#7F8C8D",
+    "#1F618D",
 ]
 QGBM_TS_LEGEND_CITATION = " (Salinas et al., 2023)"
 
@@ -377,10 +376,12 @@ def _draw_search_progression_ax(
     add_to_legend: bool,
     show_xlabel: bool,
     add_confidence_intervals: bool = True,
+    linewidth: float = 1.5,
 ) -> None:
     entity_color_map = build_entity_color_map(row_data[entity_col].unique())
     for entity, entity_data in row_data.groupby(entity_col):
         display_label = display_entity_label(entity)
+        legend_label = legend_entity_label(entity)
         color = entity_color_map[entity]
         linestyle = entity_plot_linestyle(entity)
         line = ax.plot(
@@ -392,11 +393,12 @@ def _draw_search_progression_ax(
             marker=None,
             markersize=4,
             linestyle=linestyle,
+            linewidth=linewidth,
         )[0]
 
-        if add_to_legend and display_label not in legend_labels:
+        if add_to_legend and legend_label not in legend_labels:
             legend_handles.append(line)
-            legend_labels.append(display_label)
+            legend_labels.append(legend_label)
 
         lower_col = f"{metric_col}_lower"
         upper_col = f"{metric_col}_upper"
@@ -415,10 +417,10 @@ def _draw_search_progression_ax(
             )
 
     if show_xlabel:
-        ax.set_xlabel(get_label(x_label, x_col), fontsize=14)
-    ax.set_ylabel(search_metric_label(metric_col), fontsize=14, labelpad=10)
+        ax.set_xlabel(get_label(x_label, x_col), fontsize=16)
+    ax.set_ylabel(search_metric_label(metric_col), fontsize=16, labelpad=10)
     if row_title is not None:
-        ax.set_title(row_title, fontsize=14, pad=20)
+        ax.set_title(row_title, fontsize=16, pad=20)
     ax.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.7)
     apply_metric_yscale(ax, metric_col)
 
@@ -428,8 +430,8 @@ def _draw_search_progression_ax(
 
     for spine in ["top", "right", "bottom", "left"]:
         ax.spines[spine].set_linewidth(1.2)
-    ax.tick_params(axis="both", which="major", labelsize=12, length=6, width=1.2)
-    ax.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
+    ax.tick_params(axis="both", which="major", labelsize=13, length=6, width=1.2)
+    ax.tick_params(axis="both", which="minor", labelsize=11, length=3, width=1.0)
 
 
 def sort_legend_items(handles: list, labels: list) -> tuple[list, list]:
@@ -502,7 +504,8 @@ def calculate_legend_position(
     base_bottom_margin = 0.20
 
     if plot_type == "matrix":
-        base_legend_anchor_y = -0.08
+        base_legend_anchor_y = -0.16
+        base_bottom_margin = 0.26
         subplot_row_factor = 0.002
         legend_row_factor = 0.035
     elif plot_type == "cd":
@@ -627,9 +630,15 @@ def display_entity_label(label: str) -> str:
     """Normalize entity labels for display (e.g. drop NL- prefix for UCB)."""
     label = str(label)
     if is_ucb_entity(label) and label.startswith("NL-"):
-        label = label[3:]
+        return label[3:]
+    return label
+
+
+def legend_entity_label(label: str) -> str:
+    """Legend-only display name, including the QGBM-TS citation."""
+    label = display_entity_label(label)
     if re.fullmatch(r"(NL-)?QGBM-TS", label):
-        label = f"{label}{QGBM_TS_LEGEND_CITATION}"
+        return f"{label}{QGBM_TS_LEGEND_CITATION}"
     return label
 
 
@@ -684,7 +693,7 @@ def plot_tuner(
     add_markers: bool = True,
 ) -> None:
     marker_style = marker if add_markers else "None"
-    display_label = display_entity_label(legend_label)
+    display_label = legend_entity_label(legend_label)
     linestyle = entity_plot_linestyle(legend_label)
 
     ax.plot(
@@ -1089,7 +1098,7 @@ def plot_critical_difference_diagram(
     ax.set_aspect("auto")
 
     if title:
-        ax.set_title(title, fontsize=13, fontweight=title_fontweight, pad=20)
+        ax.set_title(title, fontsize=16, fontweight=title_fontweight, pad=20)
 
 
 def apply_cd_formatting(ax):
@@ -1103,7 +1112,7 @@ def apply_cd_formatting(ax):
 
     for text in ax.findobj(match=matplotlib.text.Text):
         text.set_color("black")
-        text.set_fontsize(10)
+        text.set_fontsize(12)
 
     while ax.patches:
         ax.patches[0].remove()
@@ -1151,7 +1160,7 @@ def plot_significance_matrix(
             else:
                 p_val = p_matrix.iloc[i, j]
                 if not pd.isna(p_val):
-                    annot_matrix.iloc[i, j] = f"{p_val:.3f}"
+                    annot_matrix.iloc[i, j] = f"{p_val:.2f}"
 
     colors = ["white", "#D3D3D3"]
     cmap = ListedColormap(colors)
@@ -1165,7 +1174,7 @@ def plot_significance_matrix(
         vmax=1,
         square=True,
         cbar=False,
-        annot_kws={"size": 7, "color": "black"},
+        annot_kws={"size": 7.2, "color": "black"},
         linewidths=0.5,
         linecolor="black",
         xticklabels=display_entities,
@@ -1178,10 +1187,10 @@ def plot_significance_matrix(
         ax.text(
             i + 0.5,
             -0.25,
-            f"{rank:.2f}",
+            f"{rank:.1f}",
             ha="center",
             va="center",
-            fontsize=8,
+            fontsize=9,
             fontweight="normal",
             color="black",
             transform=ax.transData,
@@ -1193,7 +1202,7 @@ def plot_significance_matrix(
         "Ranks:",
         ha="right",
         va="center",
-        fontsize=8,
+        fontsize=9,
         fontweight="normal",
         color="black",
         transform=ax.transData,
@@ -1201,13 +1210,13 @@ def plot_significance_matrix(
 
     ax.set_title(
         "Wilcoxon@100% (Benjamini-Hochberg)",
-        fontsize=13,
+        fontsize=15,
         fontweight="normal",
         pad=20,
     )
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.tick_params(axis="both", labelsize=8, colors="black")
+    ax.tick_params(axis="both", labelsize=9, colors="black")
 
     for spine in ["top", "right", "bottom", "left"]:
         ax.spines[spine].set_linewidth(2.4)
@@ -1331,6 +1340,7 @@ def plot_paired_rank_and_cd(
                 i == 0,
                 show_xlabel,
                 add_confidence_intervals=False,
+                linewidth=1.8,
             )
             _draw_search_progression_ax(
                 ax_rank,
@@ -1346,6 +1356,7 @@ def plot_paired_rank_and_cd(
                 False,
                 show_xlabel,
                 add_confidence_intervals=False,
+                linewidth=1.8,
             )
 
             ax_matrix = axes[i][2]
@@ -1414,10 +1425,10 @@ def plot_paired_rank_and_cd(
                     if spine in ax_cd.spines:
                         ax_cd.spines[spine].set_linewidth(1.2)
                 ax_cd.tick_params(
-                    axis="both", which="major", labelsize=11, length=6, width=1.2
+                    axis="both", which="major", labelsize=13, length=6, width=1.2
                 )
                 ax_cd.tick_params(
-                    axis="both", which="minor", labelsize=9, length=3, width=1.0
+                    axis="both", which="minor", labelsize=11, length=3, width=1.0
                 )
 
     handles, labels = sort_legend_items(legend_handles, legend_labels)
@@ -1436,7 +1447,7 @@ def plot_paired_rank_and_cd(
             labels,
             loc="lower center",
             ncol=legend_ncols,
-            fontsize=13,
+            fontsize=15,
             bbox_to_anchor=(0.5, legend_anchor_y),
             frameon=False,
         )
@@ -2008,6 +2019,7 @@ def plot_joint_candidates_and_extreme_quantile(
                 continue
             color = raw_identifier_color_map[identifier]
             display_label = display_entity_label(identifier)
+            legend_label = legend_entity_label(identifier)
             line = ax_search.plot(
                 entity_data[search_x_col],
                 entity_data[search_metric_col],
@@ -2018,9 +2030,9 @@ def plot_joint_candidates_and_extreme_quantile(
                 markersize=4,
                 linestyle=entity_plot_linestyle(identifier),
             )[0]
-            if i == 0 and display_label not in legend_labels:
+            if i == 0 and legend_label not in legend_labels:
                 legend_handles.append(line)
-                legend_labels.append(display_label)
+                legend_labels.append(legend_label)
             lower_col = f"{search_metric_col}_lower"
             upper_col = f"{search_metric_col}_upper"
             if (
