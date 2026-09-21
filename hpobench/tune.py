@@ -331,6 +331,7 @@ def optuna_tune(
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
     n_candidates: int = ExperimentParameters().n_candidates,
+    local_search_random_pool_size: int = ExperimentParameters().local_search_random_pool_size,
 ) -> pd.DataFrame:
     """Runs hyperparameter optimization using Optuna with a synthetic objective function.
 
@@ -343,7 +344,10 @@ def optuna_tune(
         random_state: Optional random seed for reproducible results.
         n_trials: Optional maximum number of optimization trials.
         timeout: Optional time budget in seconds for the optimization process.
-        n_candidates: Number of candidate configurations for acquisition function maximization.
+        n_candidates: Total acquisition or surrogate evaluation budget per suggestion
+            (mapped to sampler-specific parameters such as ``n_acqf_evaluations``).
+        local_search_random_pool_size: Random pool size before local search
+            (mapped to ``n_preliminary_samples`` for GP samplers).
 
     Returns:
         DataFrame containing the complete tuning history with trial results and metadata.
@@ -352,16 +356,32 @@ def optuna_tune(
 
     if searcher == "TPE":
         initialized_sampler = TPESampler(
-            seed=random_state, n_startup_trials=0, n_ei_candidates=n_candidates
+            seed=random_state,
+            n_startup_trials=0,
+            n_ei_candidates=n_candidates,
         )
     elif searcher == "random":
         initialized_sampler = RandomSampler(seed=random_state)
     elif searcher == "CMA-ES":
         initialized_sampler = CmaEsSampler(seed=random_state, n_startup_trials=0)
     elif searcher == "GP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=True, n_preliminary_samples=2048, n_acqf_evaluations=n_candidates)
+        initialized_sampler = GPSampler(
+            seed=random_state,
+            n_startup_trials=0,
+            deterministic_objective=True,
+            local_search=True,
+            n_preliminary_samples=local_search_random_pool_size,
+            n_acqf_evaluations=n_candidates,
+        )
     elif searcher == "NL-GP":
-        initialized_sampler = GPSampler(seed=random_state, n_startup_trials=0, deterministic_objective=True, local_search=False, n_preliminary_samples=2048, n_acqf_evaluations=n_candidates)
+        initialized_sampler = GPSampler(
+            seed=random_state,
+            n_startup_trials=0,
+            deterministic_objective=True,
+            local_search=False,
+            n_preliminary_samples=local_search_random_pool_size,
+            n_acqf_evaluations=n_candidates,
+        )
     else:
         raise ValueError(f"Unknown optuna sampler: {searcher}")
 
@@ -485,6 +505,7 @@ def ccqr_optimization_tune(
     timeout: Optional[float] = None,
     searcher_tuning_framework: Optional[str] = None,
     n_candidates: int = ExperimentParameters().n_candidates,
+    local_search_random_pool_size: int = ExperimentParameters().local_search_random_pool_size,
 ) -> pd.DataFrame:
     """Runs conformal hyperparameter optimization using the ccqr_optimization framework with synthetic objectives.
 
@@ -498,7 +519,9 @@ def ccqr_optimization_tune(
         n_trials: Optional maximum number of optimization trials.
         timeout: Optional time budget in seconds for the optimization process.
         searcher_tuning_framework: Optional framework identifier for searcher training ("decaying" or "fixed").
-        n_candidates: Number of candidate configurations for acquisition function maximization.
+        n_candidates: Total surrogate plus acquisition evaluation budget per conformal iteration.
+        local_search_random_pool_size: Random pool scored before local search; remainder
+            of ``n_candidates`` is allocated by ``ConformalTuner.prepare_local_search``.
 
     Returns:
         DataFrame containing the complete tuning history with conformal prediction intervals and metadata.
@@ -512,6 +535,7 @@ def ccqr_optimization_tune(
         search_space=ccqr_optimization_params,
         minimize=True,
         n_candidates=n_candidates,
+        local_search_random_pool_size=local_search_random_pool_size,
         warm_starts=warm_start_configs,
         dynamic_sampling=True,
     )
@@ -667,6 +691,7 @@ def smac_tune(
     n_trials: Optional[int] = None,
     timeout: Optional[float] = None,
     n_candidates: int = ExperimentParameters().n_candidates,
+    local_search_random_pool_size: int = ExperimentParameters().local_search_random_pool_size,
 ) -> pd.DataFrame:
     """Runs Bayesian optimization using SMAC3 with Random Forest surrogate and acquisition functions.
 
@@ -686,6 +711,10 @@ def smac_tune(
         random_state: Optional random seed for reproducible results.
         n_trials: Optional maximum number of optimization trials.
         timeout: Optional time budget in seconds for the optimization process.
+        n_candidates: Total acquisition-function evaluation budget per BO iteration
+            (mapped to ``challengers``).
+        local_search_random_pool_size: Random configurations scored before SMAC local search
+            (mapped to ``n_random_samples``).
 
     Returns:
         DataFrame containing the complete tuning history with trial results and metadata.
@@ -716,7 +745,9 @@ def smac_tune(
 
     if searcher == "SMAC-EI":
         acquisition_maximizer = HyperparameterOptimizationFacade.get_acquisition_maximizer(
-            scenario, challengers=n_candidates
+            scenario,
+            challengers=n_candidates,
+            n_random_samples=local_search_random_pool_size,
         )
     else:
         acquisition_maximizer = RandomSearch(
@@ -820,6 +851,7 @@ def tune(
         "n_trials": n_trials,
         "timeout": timeout,
         "n_candidates": tuner_config.n_candidates,
+        "local_search_random_pool_size": ExperimentParameters().local_search_random_pool_size,
     }
 
     if tuner_config.tuner.backend == "optuna":

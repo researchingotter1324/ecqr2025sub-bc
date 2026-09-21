@@ -14,6 +14,8 @@ class ExperimentParameters(BaseModel):
         default_max_n_instances: Maximum parallel instances for experiments.
         n_candidates: Default number of candidate configurations sampled during
             acquisition function maximization.
+        local_search_random_pool_size: Random configurations scored before local
+            search; the remainder of ``n_candidates`` funds local search.
         static_data_sizes: Data sizes for static analysis experiments.
         static_tuning_iterations: Tuning iterations for static analysis.
         static_n_quantiles: Number of quantiles (must be even) used for the static
@@ -33,6 +35,7 @@ class ExperimentParameters(BaseModel):
     n_coverage_warm_starts: int = 15
     default_max_n_instances: int = 20
     n_candidates: int = 10000
+    local_search_random_pool_size: int = 2048
 
     static_data_sizes: List[int] = [25, 50, 100, 200, 400]
     static_tuning_iterations: List[int] = [0]
