@@ -1,4 +1,5 @@
 from typing import Union, Optional, List, Any
+import logging
 import warnings
 from hpobench.config.config_types import CCQRModel
 from hpobench.config.constants import ExperimentParameters
@@ -25,6 +26,42 @@ from hpobench.config.config_types import (
     OptunaModel,
     SMACModel,
 )
+
+
+logger = logging.getLogger(__name__)
+
+UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS = 10000
+
+
+def n_pre_conformal_trials_for_bound_samplers(
+    sampler: Union[
+        ThompsonSampler,
+        LowerBoundSampler,
+        PessimisticLowerBoundSampler,
+        ExpectedImprovementSampler,
+    ],
+    n_pre_conformal_trials: int,
+) -> int:
+    is_bound_sampler = isinstance(
+        sampler, (LowerBoundSampler, PessimisticLowerBoundSampler)
+    )
+    needs_remap = (
+        is_bound_sampler
+        and n_pre_conformal_trials != UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS
+    )
+
+    if needs_remap:
+        logger.warning(
+            "Remapping n_pre_conformal_trials from %s to %s for %s.",
+            n_pre_conformal_trials,
+            UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
+            sampler.__class__.__name__,
+        )
+        resolved_n_pre_conformal_trials = UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS
+    else:
+        resolved_n_pre_conformal_trials = n_pre_conformal_trials
+
+    return resolved_n_pre_conformal_trials
 
 
 def fmt_float(value: Any) -> str:
@@ -176,7 +213,9 @@ def build_sampler_variation_configurations(
         searcher = QuantileConformalSearcher(
             quantile_estimator_architecture=quantile_arch,
             sampler=sampler_copy,
-            n_pre_conformal_trials=n_pre_conformal_trials,
+            n_pre_conformal_trials=n_pre_conformal_trials_for_bound_samplers(
+                sampler_copy, n_pre_conformal_trials
+            ),
             n_calibration_folds=5,
             calibration_split_strategy=calibration_split_strategy,
         )
@@ -232,7 +271,9 @@ def build_architecture_variation_configurations(
             searcher = QuantileConformalSearcher(
                 quantile_estimator_architecture=arch,
                 sampler=sampler_copy,
-                n_pre_conformal_trials=n_pre_conformal_trials,
+                n_pre_conformal_trials=n_pre_conformal_trials_for_bound_samplers(
+                    sampler_copy, n_pre_conformal_trials
+                ),
                 n_calibration_folds=5,
                 calibration_split_strategy=calibration_split_strategy,
             )

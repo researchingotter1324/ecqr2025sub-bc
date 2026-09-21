@@ -19,6 +19,7 @@ except ImportError:
 from hpobench.config.utils import (
     get_external_tuning_configurations,
     build_architecture_variation_configurations,
+    UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
 )
 from hpobench.config.config_types import (
     TunerConfig,
@@ -30,7 +31,6 @@ EI_N_QUANTILES = 10
 
 LOCAL_SEARCH_RANDOM_STATE = 42
 DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS = 31
-UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS = 10000
 
 EXTERNAL_TUNING_CONFIGURATIONS = get_external_tuning_configurations()
 
@@ -179,7 +179,7 @@ LOWERBOUND_ABLATION_CONFIGURATIONS = build_architecture_variation_configurations
         # --- pessimistic baseline (no LCB, pure lower-bound scoring) ---
         PessimisticLowerBoundSampler(interval_width=0.8, adapter=LOWERBOUND_ABLATION_ADAPTER, local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE)),
     ],
-    n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
+    n_pre_conformal_trials=UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
     calibration_split_strategy="train_test_split",
 )
 
