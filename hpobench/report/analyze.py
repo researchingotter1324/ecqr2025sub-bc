@@ -1606,6 +1606,10 @@ def analyze_joint_architecture_and_static(
     Search and static data are pooled across all benchmarks (dataset IDs are
     prefixed with their benchmark name) so that final plots show one combined row.
     Produces plots for both normalized iteration and normalized runtime x-axes.
+
+    Search ranks treat every architecture-sampler pair as one variant and rank
+    those variants against each other within each dataset, repetition, and budget.
+    The search panels are still split by sampler; the rank values are not.
     """
     processor = BenchmarkDataProcessor(schema=schema)
 
@@ -1624,7 +1628,7 @@ def analyze_joint_architecture_and_static(
         relativize_budget=True,
         collapse_repetitions=True,
         collapse_datasets=True,
-        extra_ranking_cols=[schema.sampler_col],
+        extra_ranking_cols=None,
         n_bootstraps=1000,
     )
     save_analysis_results(
@@ -1641,7 +1645,7 @@ def analyze_joint_architecture_and_static(
         relativize_budget=True,
         collapse_repetitions=True,
         collapse_datasets=True,
-        extra_ranking_cols=[schema.sampler_col],
+        extra_ranking_cols=None,
         n_bootstraps=1000,
     )
     save_analysis_results(

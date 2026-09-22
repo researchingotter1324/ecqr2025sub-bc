@@ -1458,10 +1458,11 @@ def plot_joint_architecture_and_static(
 
     Produces one row per benchmark.  Within each row there is one search-rank
     panel per unique sampler (ordered alphabetically) followed by a single
-    pinball-loss panel on the right.  Each search-rank panel shows one line per
-    estimator architecture for that sampler; the pinball-loss panel is shared
-    across all samplers and shows lines per estimator architecture over training
-    data size.
+    pinball-loss panel on the right.      Each search-rank panel shows one line per
+    estimator architecture for that sampler. Those rank values are computed
+    upstream across every architecture-sampler variant together. The pinball-loss
+    panel is shared across all samplers and shows lines per estimator architecture
+    over training data size.
 
     Args:
         search_x_col: Column to use as the x-axis for search-rank panels.
