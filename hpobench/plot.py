@@ -434,6 +434,53 @@ def _draw_search_progression_ax(
     ax.tick_params(axis="both", which="minor", labelsize=11, length=3, width=1.0)
 
 
+def _draw_regret_and_rank_progression_row(
+    regret_ax: "plt.Axes",
+    rank_ax: "plt.Axes",
+    row_data: pd.DataFrame,
+    entity_col: str,
+    x_col: str,
+    row_title: Optional[str],
+    x_label: Optional[str],
+    x_axis_start: Optional[float],
+    legend_handles: list,
+    legend_labels: list,
+    add_regret_to_legend: bool,
+    show_xlabel: bool,
+) -> None:
+    line_kwargs = {"add_confidence_intervals": False, "linewidth": 1.8}
+    _draw_search_progression_ax(
+        regret_ax,
+        row_data,
+        entity_col,
+        x_col,
+        "normalized_regret",
+        row_title,
+        x_label,
+        x_axis_start,
+        legend_handles,
+        legend_labels,
+        add_regret_to_legend,
+        show_xlabel,
+        **line_kwargs,
+    )
+    _draw_search_progression_ax(
+        rank_ax,
+        row_data,
+        entity_col,
+        x_col,
+        "rank",
+        row_title,
+        x_label,
+        x_axis_start,
+        legend_handles,
+        legend_labels,
+        False,
+        show_xlabel,
+        **line_kwargs,
+    )
+
+
 def sort_legend_items(handles: list, labels: list) -> tuple[list, list]:
     """Sort legend items: numerically if starts with number, otherwise alphabetically."""
     combined = sorted(zip(handles, labels), key=lambda x: legend_sort_key(x[1]))
@@ -1223,6 +1270,132 @@ def plot_significance_matrix(
         ax.spines[spine].set_color("black")
 
 
+def _save_paired_rank_regret_figure(
+    data: pd.DataFrame,
+    significance_data: pd.DataFrame,
+    x_col: str,
+    entity_col: str,
+    cache_path: str,
+    run_start_str: str,
+    filename_prefix: str,
+    analysis_type: str,
+    subfolder: str,
+    row_measure: str,
+    include_significance_matrix: bool,
+    cd_budget: int,
+    x_label: Optional[str],
+    x_axis_start: Optional[float],
+) -> None:
+    path_manager = AnalysisPathManager(cache_path, run_start_str)
+    output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
+    plot_path = os.path.join(output_path, f"{filename_prefix}_paired")
+
+    plot_data = _prepare_plot_data_with_bounds(
+        data, ("rank", "normalized_regret")
+    )
+    row_values = plot_data[row_measure].unique()
+    num_cols = 3 if include_significance_matrix else 2
+
+    fig = plt.figure(
+        figsize=(PLOT_PANEL_WIDTH * num_cols, PLOT_PANEL_HEIGHT * len(row_values) + 1.0)
+    )
+    grid = GridSpec(
+        nrows=len(row_values),
+        ncols=num_cols,
+        figure=fig,
+        width_ratios=[1] * num_cols,
+        height_ratios=[1] * len(row_values),
+        wspace=0.25,
+        hspace=0.22,
+    )
+
+    legend_handles: list = []
+    legend_labels: list = []
+
+    for row_index, row_value in enumerate(row_values):
+        row_data = plot_data[plot_data[row_measure] == row_value]
+        regret_ax = fig.add_subplot(grid[row_index, 0])
+        rank_ax = fig.add_subplot(grid[row_index, 1])
+        show_xlabel = row_index == len(row_values) - 1
+
+        _draw_regret_and_rank_progression_row(
+            regret_ax=regret_ax,
+            rank_ax=rank_ax,
+            row_data=row_data,
+            entity_col=entity_col,
+            x_col=x_col,
+            row_title=row_value,
+            x_label=x_label,
+            x_axis_start=x_axis_start,
+            legend_handles=legend_handles,
+            legend_labels=legend_labels,
+            add_regret_to_legend=row_index == 0,
+            show_xlabel=show_xlabel,
+        )
+
+        if not include_significance_matrix:
+            continue
+
+        matrix_ax = fig.add_subplot(grid[row_index, 2])
+        row_sig_data = significance_data[
+            significance_data[row_measure] == row_value
+        ]
+        cd_data = row_data[row_data[x_col] == cd_budget]
+        if cd_data.empty or row_sig_data.empty:
+            matrix_ax.set_xticks([])
+            matrix_ax.set_yticks([])
+            for spine in matrix_ax.spines.values():
+                spine.set_visible(False)
+            continue
+
+        plot_significance_matrix(
+            ax=matrix_ax,
+            significance_data=row_sig_data,
+            rank_data=cd_data,
+            entity_col=entity_col,
+        )
+
+    handles, labels = sort_legend_items(legend_handles, legend_labels)
+    legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
+    num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
+    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
+        len(row_values), num_legend_rows, plot_type="matrix"
+    )
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=legend_ncols,
+            fontsize=15,
+            bbox_to_anchor=(0.5, legend_anchor_y),
+            frameon=False,
+        )
+    fig.subplots_adjust(
+        wspace=0.15,
+        hspace=0.22,
+        bottom=legend_bottom_margin,
+        top=0.93,
+        left=0.09,
+        right=0.98,
+    )
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    for fmt in PLOT_FORMATS:
+        fig.savefig(
+            f"{plot_path}_{timestamp}.{fmt}",
+            dpi=PLOT_DPI,
+            bbox_inches="tight",
+            format=fmt,
+        )
+    plt.close(fig)
+    logger.debug(
+        "Paired plots saved in %s with prefix %s_paired",
+        output_path,
+        filename_prefix,
+    )
+
+
 def plot_paired_rank_and_cd(
     data: pd.DataFrame,
     significance_data: pd.DataFrame,
@@ -1240,246 +1413,33 @@ def plot_paired_rank_and_cd(
     x_axis_start: Optional[float] = None,
     y_col_lower: Optional[str] = None,
     y_col_upper: Optional[str] = None,
-    significance_plot_type: Literal["cd", "matrix"] = "cd",
 ) -> None:
-    """Plot paired visualizations: search progression and significance analysis.
+    """Save rank/regret progression plots with and without the significance matrix."""
+    progression_prefix = filename_prefix.replace(
+        "_with_global_cd", "_with_global_joint_progression"
+    ).replace("_with_cd", "_with_joint_progression")
 
-    Creates a plot where:
-    - Matrix mode: normalized regret progression, rank progression, then significance matrix
-    - CD mode: rank evolution over budget on the left; CD diagrams on the right
-    - Shared legend at the bottom center
-
-    Args:
-        data: Aggregated rank data with budget information
-        significance_data: Pairwise significance test results
-        x_col: Column for x-axis (budget)
-        entity_col: Column for algorithms/entities
-        cache_path: Base cache path
-        run_start_str: Run identifier
-        filename_prefix: Prefix for saved files
-        analysis_type: Analysis type for path organization
-        subfolder: Subfolder for saving plots
-        row_measure: Column for row grouping (e.g., benchmark)
-        cd_budget: Budget value to use for analysis
-        alpha: Significance level
-        x_label: Custom x-axis label
-        x_axis_start: Optional starting value for x-axis
-        y_col_lower: Optional column name for lower confidence bound
-        y_col_upper: Optional column name for upper confidence bound
-        significance_plot_type: Type of significance plot ("cd" or "matrix")
-    """
-    path_manager = AnalysisPathManager(cache_path, run_start_str)
-    output_path = path_manager.get_analysis_path(analysis_type, "plots", subfolder)
-    plot_path = os.path.join(output_path, f"{filename_prefix}_paired")
-
-    plot_data = _prepare_plot_data_with_bounds(
-        data, ("rank", "normalized_regret")
-    )
-
-    row_values = plot_data[row_measure].unique()
-
-    base_width = 4.0
-    base_height = 3.0
-
-    if significance_plot_type == "matrix":
-        fig_width = base_width * 3
-        fig_height = base_height * len(row_values) + 1.0
-
-        fig = plt.figure(figsize=(fig_width, fig_height))
-        gs = GridSpec(
-            nrows=len(row_values),
-            ncols=3,
-            figure=fig,
-            width_ratios=[1, 1, 1],
-            height_ratios=[1] * len(row_values),
-            wspace=0.25,
-            hspace=0.22,
-        )
-    else:
-        fig_width = base_width * 2
-        fig_height = base_height * len(row_values)
-
-        fig = plt.figure(figsize=(fig_width, fig_height), constrained_layout=True)
-        gs = GridSpec(nrows=len(row_values) * 2, ncols=2, figure=fig)
-
-    axes = []
-    for i in range(len(row_values)):
-        if significance_plot_type == "matrix":
-            ax_normalized_regret = fig.add_subplot(gs[i, 0])
-            ax_rank = fig.add_subplot(gs[i, 1])
-            ax_matrix = fig.add_subplot(gs[i, 2])
-            axes.append([ax_normalized_regret, ax_rank, ax_matrix])
-        else:
-            ax_rank = fig.add_subplot(gs[i * 2 : (i + 1) * 2, 0])
-            ax_cd_uncorrected = fig.add_subplot(gs[i * 2, 1])
-            ax_cd_corrected = fig.add_subplot(gs[i * 2 + 1, 1])
-            axes.append([ax_rank, ax_cd_uncorrected, ax_cd_corrected])
-
-    legend_handles = []
-    legend_labels = []
-
-    for i, row_value in enumerate(row_values):
-        row_data = plot_data[plot_data[row_measure] == row_value]
-        row_sig_data = significance_data[significance_data[row_measure] == row_value]
-        show_xlabel = i == len(row_values) - 1
-
-        if significance_plot_type == "matrix":
-            ax_normalized_regret = axes[i][0]
-            ax_rank = axes[i][1]
-            _draw_search_progression_ax(
-                ax_normalized_regret,
-                row_data,
-                entity_col,
-                x_col,
-                "normalized_regret",
-                row_value,
-                x_label,
-                x_axis_start,
-                legend_handles,
-                legend_labels,
-                i == 0,
-                show_xlabel,
-                add_confidence_intervals=False,
-                linewidth=1.8,
-            )
-            _draw_search_progression_ax(
-                ax_rank,
-                row_data,
-                entity_col,
-                x_col,
-                "rank",
-                row_value,
-                x_label,
-                x_axis_start,
-                legend_handles,
-                legend_labels,
-                False,
-                show_xlabel,
-                add_confidence_intervals=False,
-                linewidth=1.8,
-            )
-
-            ax_matrix = axes[i][2]
-            cd_data = row_data[row_data[x_col] == cd_budget]
-
-            if not cd_data.empty and not row_sig_data.empty:
-                plot_significance_matrix(
-                    ax=ax_matrix,
-                    significance_data=row_sig_data,
-                    rank_data=cd_data,
-                    entity_col=entity_col,
-                )
-            else:
-                ax_matrix.set_xticks([])
-                ax_matrix.set_yticks([])
-                for spine in ax_matrix.spines.values():
-                    spine.set_visible(False)
-        else:
-            ax_rank = axes[i][0]
-            _draw_search_progression_ax(
-                ax_rank,
-                row_data,
-                entity_col,
-                x_col,
-                "rank",
-                row_value,
-                x_label,
-                x_axis_start,
-                legend_handles,
-                legend_labels,
-                i == 0,
-                show_xlabel,
-            )
-
-            ax_cd_uncorrected = axes[i][1]
-            ax_cd_corrected = axes[i][2]
-            cd_data = row_data[row_data[x_col] == cd_budget]
-
-            if not cd_data.empty and not row_sig_data.empty:
-                mean_ranks = dict(zip(cd_data[entity_col], cd_data["rank"]))
-                plot_critical_difference_diagram(
-                    ax=ax_cd_uncorrected,
-                    mean_ranks=mean_ranks,
-                    significance_results=row_sig_data,
-                    alpha=alpha,
-                    title=f"CD@{cd_budget}% (Raw)",
-                    p_value_column="p_value",
-                )
-                plot_critical_difference_diagram(
-                    ax=ax_cd_corrected,
-                    mean_ranks=mean_ranks,
-                    significance_results=row_sig_data,
-                    alpha=alpha,
-                    title=f"CD@{cd_budget}% (Benjamini-Hochberg)",
-                    p_value_column="p_value_corrected",
-                )
-            else:
-                for ax_cd in [ax_cd_uncorrected, ax_cd_corrected]:
-                    ax_cd.set_xticks([])
-                    ax_cd.set_yticks([])
-                    for spine in ax_cd.spines.values():
-                        spine.set_visible(False)
-
-            for ax_cd in [ax_cd_uncorrected, ax_cd_corrected]:
-                for spine in ["top", "right", "bottom", "left"]:
-                    if spine in ax_cd.spines:
-                        ax_cd.spines[spine].set_linewidth(1.2)
-                ax_cd.tick_params(
-                    axis="both", which="major", labelsize=13, length=6, width=1.2
-                )
-                ax_cd.tick_params(
-                    axis="both", which="minor", labelsize=11, length=3, width=1.0
-                )
-
-    handles, labels = sort_legend_items(legend_handles, legend_labels)
-
-    num_subplot_rows = len(row_values)
-    legend_ncols = compute_legend_ncols(len(labels)) if labels else 1
-    num_legend_rows = math.ceil(len(labels) / legend_ncols) if labels else 1
-    plot_type = "matrix" if significance_plot_type == "matrix" else "cd"
-    legend_anchor_y, legend_bottom_margin = calculate_legend_position(
-        num_subplot_rows, num_legend_rows, plot_type
-    )
-
-    if handles:
-        fig.legend(
-            handles,
-            labels,
-            loc="lower center",
-            ncol=legend_ncols,
-            fontsize=15,
-            bbox_to_anchor=(0.5, legend_anchor_y),
-            frameon=False,
+    for prefix, include_significance_matrix in (
+        (filename_prefix, True),
+        (progression_prefix, False),
+    ):
+        _save_paired_rank_regret_figure(
+            data=data,
+            significance_data=significance_data,
+            x_col=x_col,
+            entity_col=entity_col,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            filename_prefix=prefix,
+            analysis_type=analysis_type,
+            subfolder=subfolder,
+            row_measure=row_measure,
+            include_significance_matrix=include_significance_matrix,
+            cd_budget=cd_budget,
+            x_label=x_label,
+            x_axis_start=x_axis_start,
         )
 
-    if significance_plot_type == "matrix":
-        fig.subplots_adjust(
-            wspace=0.15,
-            hspace=0.22,
-            bottom=legend_bottom_margin,
-            top=0.93,
-            left=0.09,
-            right=0.98,
-        )
-    else:
-        fig.subplots_adjust(
-            wspace=0.15,
-            hspace=0.22,
-            bottom=legend_bottom_margin,
-            top=0.90,
-            left=0.09,
-            right=0.98,
-        )
-
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    for fmt in PLOT_FORMATS:
-        full_path = f"{plot_path}_{timestamp}.{fmt}"
-        fig.savefig(full_path, dpi=PLOT_DPI, bbox_inches="tight", format=fmt)
-
-    plt.close(fig)
-    logger.debug(
-        f"Paired plots saved in {output_path} with prefix {filename_prefix}_paired"
-    )
 
 def plot_joint_architecture_and_static(
     main_processed_df: pd.DataFrame,

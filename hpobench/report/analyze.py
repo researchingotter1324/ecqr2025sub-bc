@@ -225,7 +225,6 @@ def plot_cd_diagram(
         x_label="% Budget Used",
         y_col_lower=None,
         y_col_upper=None,
-        significance_plot_type="matrix",
     )
 
 
