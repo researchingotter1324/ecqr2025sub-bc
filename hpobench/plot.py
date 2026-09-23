@@ -1221,7 +1221,7 @@ def plot_significance_matrix(
         vmax=1,
         square=True,
         cbar=False,
-        annot_kws={"size": 7.2, "color": "black"},
+        annot_kws={"size": 8, "color": "black"},
         linewidths=0.5,
         linecolor="black",
         xticklabels=display_entities,
@@ -1249,7 +1249,7 @@ def plot_significance_matrix(
         "Ranks:",
         ha="right",
         va="center",
-        fontsize=9,
+        fontsize=9.5,
         fontweight="normal",
         color="black",
         transform=ax.transData,
@@ -1263,7 +1263,7 @@ def plot_significance_matrix(
     )
     ax.set_xlabel("")
     ax.set_ylabel("")
-    ax.tick_params(axis="both", labelsize=9, colors="black")
+    ax.tick_params(axis="both", labelsize=11, colors="black")
 
     for spine in ["top", "right", "bottom", "left"]:
         ax.spines[spine].set_linewidth(2.4)
