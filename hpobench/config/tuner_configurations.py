@@ -380,22 +380,30 @@ for n_candidates in NUM_CANDIDATES_VALUES:
     )
 
 EI_ARCHITECTURE_VARIATION_ADAPTER = "DtACI"
+EI_ARCHITECTURE_VARIATION_ARCHITECTURES = [
+    "qgbm",
+    "qleaf",
+    "ql",
+    "qens3",
+]
+EI_ARCHITECTURE_VARIATION_SAMPLERS = [
+    ExpectedImprovementSampler(
+        n_quantiles=EI_N_QUANTILES,
+        adapter=EI_ARCHITECTURE_VARIATION_ADAPTER,
+        target_type="incumbent",
+        local_search=SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
+    ),
+]
 EI_ARCHITECTURE_VARIATION_CONFIGURATIONS = build_architecture_variation_configurations(
-    architectures=[
-                "qgbm",
-                "qleaf",
-                "ql",
-                "qens3",
-    ],
-    samplers=[
-        ExpectedImprovementSampler(
-            n_quantiles=EI_N_QUANTILES,
-            adapter=EI_ARCHITECTURE_VARIATION_ADAPTER,
-            target_type="incumbent",
-            local_search= SmacLocalSearch(random_state=LOCAL_SEARCH_RANDOM_STATE),
-        ),
-    ],
+    architectures=EI_ARCHITECTURE_VARIATION_ARCHITECTURES,
+    samplers=EI_ARCHITECTURE_VARIATION_SAMPLERS,
     n_pre_conformal_trials=DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
+    searcher_tuning_framework=None,
+    calibration_split_strategy="train_test_split",
+) + build_architecture_variation_configurations(
+    architectures=EI_ARCHITECTURE_VARIATION_ARCHITECTURES,
+    samplers=EI_ARCHITECTURE_VARIATION_SAMPLERS,
+    n_pre_conformal_trials=UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
     searcher_tuning_framework=None,
     calibration_split_strategy="train_test_split",
 )

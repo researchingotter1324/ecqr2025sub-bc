@@ -51,11 +51,11 @@ run_sections = {
     # "run_num_candidates_comparison": False,
 
     # "run_coverage_analysis": True,
-    "run_external_tuning_analysis": True,
-    "run_preconformal_comparison_analysis": True,
-    "run_categorical_external_tuning_analysis": True,
-    "run_quantile_count_comparison": True,
-    "run_joint_run_analysis": True,
+    # "run_external_tuning_analysis": True,
+    # "run_preconformal_comparison_analysis": True,
+    # "run_categorical_external_tuning_analysis": True,
+    # "run_quantile_count_comparison": True,
+    # "run_joint_run_analysis": True,
     # "run_joint_candidates_extreme_quantile_analysis": True,
     "run_ei_architecture_analysis": True,
 }

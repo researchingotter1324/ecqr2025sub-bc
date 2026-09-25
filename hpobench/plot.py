@@ -13,7 +13,10 @@ import math
 import re
 from hpobench.utils import AnalysisPathManager
 from hpobench.config.schema import BenchmarkDataSchema
-from hpobench.config.tuner_configurations import DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
+from hpobench.config.tuner_configurations import (
+    DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
+    UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
+)
 import seaborn as sns
 from matplotlib.colors import ListedColormap
 
@@ -693,6 +696,32 @@ def entity_plot_linestyle(label: str) -> str:
     if is_ucb_entity(label):
         return "-"
     return "--" if is_non_local(label) else "-"
+
+
+UNCONFORMALIZED_ARCHITECTURE_PREFIX = "U-"
+
+
+def unconformalized_variant_linestyle(n_pre_conformal_trials: int) -> str:
+    """Dash the unconformalized preconformal-trial counterpart of a solid line."""
+    linestyle = "-"
+    if n_pre_conformal_trials == UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS:
+        linestyle = "--"
+    return linestyle
+
+
+def ei_architecture_series_label(
+    architecture: str,
+    n_pre_conformal_trials: int,
+    distinguish_variants: bool,
+) -> str:
+    """Prefix only the unconformalized copy when both preconformal counts are plotted."""
+    label = architecture
+    if (
+        distinguish_variants
+        and n_pre_conformal_trials == UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS
+    ):
+        label = f"{UNCONFORMALIZED_ARCHITECTURE_PREFIX}{architecture}"
+    return label
 
 
 def build_entity_color_map(entities) -> dict[str, str]:
@@ -1697,6 +1726,87 @@ def plot_joint_architecture_and_static(
     logger.debug(f"Joint plots saved in {output_path} with prefix {filename_prefix}")
 
 
+def ei_architecture_line_table(
+    frames: list[pd.DataFrame],
+    arch_col: str,
+    n_pre_col: str,
+) -> pd.DataFrame:
+    """One row per architecture and preconformal-trial count to draw."""
+    pieces = []
+    for frame in frames:
+        has_architectures = arch_col in frame.columns and not frame.empty
+        if has_architectures:
+            pre_counts = pd.Series(np.nan, index=frame.index)
+            if n_pre_col in frame.columns:
+                pre_counts = pd.to_numeric(frame[n_pre_col], errors="coerce")
+            pieces.append(
+                pd.DataFrame(
+                    {
+                        arch_col: frame[arch_col].astype(str),
+                        n_pre_col: pre_counts,
+                    }
+                )
+            )
+
+    keys = pd.DataFrame(columns=[arch_col, n_pre_col])
+    if len(pieces) > 0:
+        keys = pd.concat(pieces, ignore_index=True).drop_duplicates()
+    keys = keys.dropna(subset=[n_pre_col])
+
+    present_counts = [int(value) for value in keys[n_pre_col].unique()]
+    distinguish_variants = (
+        DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS in present_counts
+        and UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS in present_counts
+    )
+
+    records = []
+    for architecture in sorted(keys[arch_col].unique()):
+        architecture_counts = keys.loc[keys[arch_col] == architecture, n_pre_col]
+        ordered_counts = sorted(
+            [int(value) for value in architecture_counts.unique()]
+        )
+        for n_pre in ordered_counts:
+            records.append(
+                {
+                    "architecture": architecture,
+                    "n_pre_conformal_trials": n_pre,
+                    "legend_label": ei_architecture_series_label(
+                        architecture=architecture,
+                        n_pre_conformal_trials=n_pre,
+                        distinguish_variants=distinguish_variants,
+                    ),
+                    "linestyle": unconformalized_variant_linestyle(
+                        n_pre_conformal_trials=n_pre,
+                    ),
+                }
+            )
+
+    line_table = pd.DataFrame(
+        records,
+        columns=[
+            "architecture",
+            "n_pre_conformal_trials",
+            "legend_label",
+            "linestyle",
+        ],
+    )
+    return line_table
+
+
+def select_ei_architecture_series(
+    frame: pd.DataFrame,
+    arch_col: str,
+    n_pre_col: str,
+    architecture: str,
+    n_pre_conformal_trials: int,
+) -> pd.DataFrame:
+    pre_values = pd.to_numeric(frame[n_pre_col], errors="coerce")
+    selected = frame[
+        (frame[arch_col] == architecture) & (pre_values == n_pre_conformal_trials)
+    ]
+    return selected
+
+
 def plot_ei_architecture_triplot(
     search_performance_df: pd.DataFrame,
     ei_metrics_df: pd.DataFrame,
@@ -1713,11 +1823,13 @@ def plot_ei_architecture_triplot(
 ) -> None:
     """Three-panel EI architecture figure: search ranks | ei_collapsed rate | perc_zero_ei.
 
-    Each panel has one line per estimator architecture.  The left panel uses a
-    linear y-axis (rank); the middle and right panels use a log y-axis so that
-    small values and sudden jumps are both readable.  Log-axis ticks are placed at
-    every decade *and* at several intermediate sub-decade values, and are labelled
-    explicitly to make the scale unambiguous.
+    Each panel has one line per estimator architecture. Unconformalized
+    preconformal-trial counterparts of those architectures are drawn as dashed
+    lines in the same color. The left panel uses a linear y-axis (rank); the
+    middle and right panels use a log y-axis so that small values and sudden
+    jumps are both readable. Log-axis ticks are placed at every decade *and* at
+    several intermediate sub-decade values, and are labelled explicitly to make
+    the scale unambiguous.
 
     Args:
         search_x_col: Column to use as the x-axis for the search-rank panel.
@@ -1742,14 +1854,18 @@ def plot_ei_architecture_triplot(
         )
     )
 
-    all_archs = sorted(
-        set(plot_data[arch_col].unique()).union(
-            ei_metrics_df[arch_col].unique()
-        )
+    n_pre_col = schema.n_pre_conformal_trials_col
+    line_table = ei_architecture_line_table(
+        frames=[plot_data, ei_metrics_df],
+        arch_col=arch_col,
+        n_pre_col=n_pre_col,
     )
+    series_records = line_table.to_dict(orient="records")
     color_map = {
-        arch: DEFAULT_COLOR_PALETTE[i % len(DEFAULT_COLOR_PALETTE)]
-        for i, arch in enumerate(all_archs)
+        architecture: DEFAULT_COLOR_PALETTE[palette_index % len(DEFAULT_COLOR_PALETTE)]
+        for palette_index, architecture in enumerate(
+            sorted(line_table["architecture"].unique())
+        )
     }
 
     base_width = 4.0
@@ -1771,21 +1887,28 @@ def plot_ei_architecture_triplot(
         search_row = plot_data[plot_data[bench_col] == row_value]
         ei_row = ei_metrics_df[ei_metrics_df[bench_col] == row_value]
 
-        for arch in all_archs:
-            arch_data = search_row[search_row[arch_col] == arch]
+        for series in series_records:
+            arch_data = select_ei_architecture_series(
+                frame=search_row,
+                arch_col=arch_col,
+                n_pre_col=n_pre_col,
+                architecture=series["architecture"],
+                n_pre_conformal_trials=series["n_pre_conformal_trials"],
+            )
             if arch_data.empty:
                 continue
-            color = color_map[arch]
+            color = color_map[series["architecture"]]
             line = ax_search.plot(
                 arch_data[search_x_col],
                 arch_data[search_metric_col],
-                label=arch,
+                label=series["legend_label"],
                 alpha=0.85,
                 color=color,
+                linestyle=series["linestyle"],
             )[0]
             if i == 0:
                 legend_handles.append(line)
-                legend_labels.append(arch)
+                legend_labels.append(series["legend_label"])
             lower_col = f"{search_metric_col}_lower"
             upper_col = f"{search_metric_col}_upper"
             if (
@@ -1812,19 +1935,24 @@ def plot_ei_architecture_triplot(
         apply_metric_yscale(ax_search, search_metric_col)
 
         collapsed_col = "cumulative_ei_collapsed_rate"
-        for arch in all_archs:
-            arch_data = ei_row[ei_row[arch_col] == arch].sort_values(
-                by=schema.iter_unit
-            )
+        for series in series_records:
+            arch_data = select_ei_architecture_series(
+                frame=ei_row,
+                arch_col=arch_col,
+                n_pre_col=n_pre_col,
+                architecture=series["architecture"],
+                n_pre_conformal_trials=series["n_pre_conformal_trials"],
+            ).sort_values(by=schema.iter_unit)
             if arch_data.empty or collapsed_col not in arch_data.columns:
                 continue
-            color = color_map[arch]
+            color = color_map[series["architecture"]]
             ax_collapsed.plot(
                 arch_data[schema.iter_unit],
                 arch_data[collapsed_col],
-                label=arch,
+                label=series["legend_label"],
                 alpha=0.85,
                 color=color,
+                linestyle=series["linestyle"],
             )
         ax_collapsed.set_xlabel("Iteration", fontsize=14)
         ax_collapsed.set_ylabel("Cumulative Failed Iteration Rate (%)", fontsize=14, labelpad=10)
@@ -1844,19 +1972,24 @@ def plot_ei_architecture_triplot(
         ax_collapsed.tick_params(axis="both", which="minor", labelsize=10, length=3, width=1.0)
 
         zero_ei_col = "perc_zero_ei"
-        for arch in all_archs:
-            arch_data = ei_row[ei_row[arch_col] == arch].sort_values(
-                by=schema.iter_unit
-            )
+        for series in series_records:
+            arch_data = select_ei_architecture_series(
+                frame=ei_row,
+                arch_col=arch_col,
+                n_pre_col=n_pre_col,
+                architecture=series["architecture"],
+                n_pre_conformal_trials=series["n_pre_conformal_trials"],
+            ).sort_values(by=schema.iter_unit)
             if arch_data.empty or zero_ei_col not in arch_data.columns:
                 continue
-            color = color_map[arch]
+            color = color_map[series["architecture"]]
             ax_zero_ei.plot(
                 arch_data[schema.iter_unit],
                 arch_data[zero_ei_col],
-                label=arch,
+                label=series["legend_label"],
                 alpha=0.85,
                 color=color,
+                linestyle=series["linestyle"],
             )
         ax_zero_ei.set_xlabel("Iteration", fontsize=14)
         ax_zero_ei.set_ylabel("Zero EI Rate (%)", fontsize=14, labelpad=10)

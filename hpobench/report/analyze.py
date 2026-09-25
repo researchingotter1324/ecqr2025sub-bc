@@ -3,7 +3,10 @@ import logging
 from typing import List, Literal, Optional
 from hpobench.utils import AnalysisPathManager
 from hpobench.config.schema import BenchmarkDataSchema
-from hpobench.config.tuner_configurations import DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
+from hpobench.config.tuner_configurations import (
+    DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
+    UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
+)
 from hpobench.utils import save_analysis_results
 from hpobench.plot import (
     plot_and_save,
@@ -1946,40 +1949,94 @@ def analyze_joint_candidates_and_extreme_quantile(
                 )
 
 
-def analyze_ei_architecture(
+EI_ARCHITECTURE_BASE_OUTPUT_SUFFIX = ""
+EI_ARCHITECTURE_POOLED_OUTPUT_SUFFIX = "__pooled"
+EI_PRECONFORMAL_COUNT_ERROR = (
+    "EI architecture analysis requires one n_pre_conformal_trials value, "
+    "or the default conformalized count together with "
+    "UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS."
+)
+
+
+def ei_result_name(filename: str, output_suffix: str) -> str:
+    csv_extension = ".csv"
+    stem = filename.removesuffix(csv_extension)
+    return f"{stem}{output_suffix}{csv_extension}"
+
+
+def preconformal_trial_counts(
+    raw_benchmark_data: pd.DataFrame,
+    n_pre_conformal_trials_col: str,
+) -> list[int]:
+    pre_values = pd.to_numeric(
+        raw_benchmark_data[n_pre_conformal_trials_col], errors="coerce"
+    )
+    counts = []
+    for value in pre_values.dropna().unique():
+        counts.append(int(value))
+    return counts
+
+
+def ei_data_has_unconformalized_counterparts(counts: list[int]) -> bool:
+    return (
+        DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS in counts
+        and UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS in counts
+    )
+
+
+def ei_preconformal_counts_are_supported(counts: list[int]) -> bool:
+    supported_counts = [
+        DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS,
+        UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS,
+    ]
+    unsupported_counts = [
+        count for count in counts if count not in supported_counts
+    ]
+    is_one_count = len(counts) == 1
+    is_conformal_and_unconformal_pair = (
+        ei_data_has_unconformalized_counterparts(counts=counts)
+        and len(counts) == 2
+    )
+    return len(unsupported_counts) == 0 and (
+        is_one_count or is_conformal_and_unconformal_pair
+    )
+
+
+def conformalized_ei_rows(
+    raw_benchmark_data: pd.DataFrame,
+    n_pre_conformal_trials_col: str,
+) -> pd.DataFrame:
+    pre_values = pd.to_numeric(
+        raw_benchmark_data[n_pre_conformal_trials_col], errors="coerce"
+    )
+    conformal_rows = raw_benchmark_data.loc[
+        pre_values == DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
+    ].copy()
+    return conformal_rows
+
+
+def ei_conformalization_marker_trial(counts: list[int]) -> int:
+    marker_trial = counts[0]
+    if DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS in counts:
+        marker_trial = DEFAULT_NUMBER_OF_PRECONFORMAL_TRIALS
+    return marker_trial
+
+
+def analyze_ei_architecture_slice(
     raw_benchmark_data: pd.DataFrame,
     cache_path: str,
     run_start_str: str,
     analysis_type: str,
     schema: BenchmarkDataSchema,
-    n_bootstraps: int = 1000,
+    n_bootstraps: int,
+    output_suffix: str,
 ) -> None:
-    """Process EI architecture variation data and produce the EI architecture tri-plot.
+    """Rank and plot one EI architecture slice.
 
-    Produces a three-panel figure (one row per benchmark) where each line represents
-    a different estimator architecture, all sharing a single EI sampler:
-    - Left panel: search performance rank over the normalized iteration budget.
-    - Middle panel: cumulative average of the ``ei_collapsed`` binary indicator
-      (collapsed/hard-max EI rate) over the absolute iteration budget.
-    - Right panel: ``perc_zero_ei`` per trial — already a percentage value from
-      the study object, averaged across repetitions without prior accumulation.
-
-    Exactly one sampler must be present in the data (enforced here).
-
-    Args:
-        raw_benchmark_data: Raw benchmark data for a single EI sampler across
-            multiple estimator architectures.
-        cache_path: Root directory for saving analysis outputs.
-        run_start_str: Timestamp identifier for this experimental run.
-        analysis_type: Analysis category label for file organization.
-        schema: Data schema defining column names.
-        n_bootstraps: Number of bootstrap samples for rank confidence intervals.
-
-    Raises:
-        ValueError: If more than one sampler is present in the data.
+    Ranking and normalized regret are computed from ``raw_benchmark_data`` only.
+    An empty ``output_suffix`` keeps the existing artifact names.
     """
     sampler_col = schema.sampler_col
-    estimator_architecture_col = schema.estimator_architecture_col
     iter_unit = schema.iter_unit
 
     if raw_benchmark_data[sampler_col].nunique() != 1:
@@ -1987,19 +2044,15 @@ def analyze_ei_architecture(
             "EI architecture analysis requires exactly one sampler."
         )
 
-    n_pre_conformal_trials_col = schema.n_pre_conformal_trials_col
-    pre_conformal_values = (
-        pd.to_numeric(
-            raw_benchmark_data[n_pre_conformal_trials_col], errors="coerce"
-        )
-        .dropna()
-        .unique()
+    preconformal_counts = preconformal_trial_counts(
+        raw_benchmark_data=raw_benchmark_data,
+        n_pre_conformal_trials_col=schema.n_pre_conformal_trials_col,
     )
-    if len(pre_conformal_values) != 1:
-        raise ValueError(
-            "EI architecture analysis requires a single n_pre_conformal_trials value."
-        )
-    n_pre_conformal_trials = int(pre_conformal_values[0])
+    if not ei_preconformal_counts_are_supported(preconformal_counts):
+        raise ValueError(EI_PRECONFORMAL_COUNT_ERROR)
+    n_pre_conformal_trials = ei_conformalization_marker_trial(
+        counts=preconformal_counts,
+    )
 
     processor = BenchmarkDataProcessor(schema=schema)
     runtime_unit = schema.runtime_unit
@@ -2017,7 +2070,10 @@ def analyze_ei_architecture(
         df=search_performance_iter_results,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename="ei_arch_search_performance_iterative_results.csv",
+        filename=ei_result_name(
+            filename="ei_arch_search_performance_iterative_results.csv",
+            output_suffix=output_suffix,
+        ),
         analysis_type=analysis_type,
     )
 
@@ -2034,7 +2090,10 @@ def analyze_ei_architecture(
         df=search_performance_runtime_results,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename="ei_arch_search_performance_runtime_results.csv",
+        filename=ei_result_name(
+            filename="ei_arch_search_performance_runtime_results.csv",
+            output_suffix=output_suffix,
+        ),
         analysis_type=analysis_type,
     )
 
@@ -2052,7 +2111,10 @@ def analyze_ei_architecture(
         df=ei_metrics_results,
         cache_path=cache_path,
         run_start_str=run_start_str,
-        filename="ei_arch_ei_metrics_results.csv",
+        filename=ei_result_name(
+            filename="ei_arch_ei_metrics_results.csv",
+            output_suffix=output_suffix,
+        ),
         analysis_type=analysis_type,
     )
 
@@ -2071,13 +2133,13 @@ def analyze_ei_architecture(
                 search_iter_bench,
                 schema.norm_iter_unit,
                 f"ei_architecture_triplot_by_iteration__{benchmark}",
-                "ei_architecture_analysis/by_iteration",
+                f"ei_architecture_analysis{output_suffix}/by_iteration",
             ),
             (
                 search_runtime_bench,
                 schema.norm_runtime_unit,
                 f"ei_architecture_triplot_by_runtime__{benchmark}",
-                "ei_architecture_analysis/by_runtime",
+                f"ei_architecture_analysis{output_suffix}/by_runtime",
             ),
         ]:
             for search_metric_col in ("rank", "normalized_regret"):
@@ -2138,13 +2200,13 @@ def analyze_ei_architecture(
                 global_search_iter,
                 schema.norm_iter_unit,
                 "ei_architecture_triplot_by_iteration__global",
-                "ei_architecture_analysis/by_iteration",
+                f"ei_architecture_analysis{output_suffix}/by_iteration",
             ),
             (
                 global_search_runtime,
                 schema.norm_runtime_unit,
                 "ei_architecture_triplot_by_runtime__global",
-                "ei_architecture_analysis/by_runtime",
+                f"ei_architecture_analysis{output_suffix}/by_runtime",
             ),
         ]:
             for search_metric_col in ("rank", "normalized_regret"):
@@ -2162,3 +2224,81 @@ def analyze_ei_architecture(
                     search_metric_col=search_metric_col,
                     n_pre_conformal_trials=n_pre_conformal_trials,
                 )
+
+
+def analyze_ei_architecture(
+    raw_benchmark_data: pd.DataFrame,
+    cache_path: str,
+    run_start_str: str,
+    analysis_type: str,
+    schema: BenchmarkDataSchema,
+    n_bootstraps: int = 1000,
+) -> None:
+    """Process EI architecture variation data and produce the EI architecture tri-plot.
+
+    Produces a three-panel figure (one row per benchmark) where each line represents
+    a different estimator architecture, all sharing a single EI sampler:
+    - Left panel: search performance rank over the normalized iteration budget.
+    - Middle panel: cumulative average of the ``ei_collapsed`` binary indicator
+      (collapsed/hard-max EI rate) over the absolute iteration budget.
+    - Right panel: ``perc_zero_ei`` per trial — already a percentage value from
+      the study object, averaged across repetitions without prior accumulation.
+
+    When the raw data contains only one preconformal-trial count, this is a single
+    pass and the artifact names are unchanged. When it contains both the default
+    conformalized count and ``UNCONFORMALIZED_N_PRE_CONFORMAL_TRIALS``, the same
+    outputs are written twice: first from the conformalized rows only, then from
+    the pooled rows. Ranking and normalized regret run inside each pass.
+
+    Exactly one sampler must be present in the data (enforced here).
+
+    Args:
+        raw_benchmark_data: Raw benchmark data for a single EI sampler across
+            multiple estimator architectures.
+        cache_path: Root directory for saving analysis outputs.
+        run_start_str: Timestamp identifier for this experimental run.
+        analysis_type: Analysis category label for file organization.
+        schema: Data schema defining column names.
+        n_bootstraps: Number of bootstrap samples for rank confidence intervals.
+
+    Raises:
+        ValueError: If more than one sampler is present in the data, or if the
+            preconformal-trial counts are neither a single value nor the
+            conformalized/unconformalized pair.
+    """
+    preconformal_counts = preconformal_trial_counts(
+        raw_benchmark_data=raw_benchmark_data,
+        n_pre_conformal_trials_col=schema.n_pre_conformal_trials_col,
+    )
+    if not ei_preconformal_counts_are_supported(preconformal_counts):
+        raise ValueError(EI_PRECONFORMAL_COUNT_ERROR)
+
+    has_unconformalized_counterparts = ei_data_has_unconformalized_counterparts(
+        counts=preconformal_counts,
+    )
+    conformal_rows = raw_benchmark_data
+    if has_unconformalized_counterparts:
+        conformal_rows = conformalized_ei_rows(
+            raw_benchmark_data=raw_benchmark_data,
+            n_pre_conformal_trials_col=schema.n_pre_conformal_trials_col,
+        )
+
+    analyze_ei_architecture_slice(
+        raw_benchmark_data=conformal_rows,
+        cache_path=cache_path,
+        run_start_str=run_start_str,
+        analysis_type=analysis_type,
+        schema=schema,
+        n_bootstraps=n_bootstraps,
+        output_suffix=EI_ARCHITECTURE_BASE_OUTPUT_SUFFIX,
+    )
+    if has_unconformalized_counterparts:
+        analyze_ei_architecture_slice(
+            raw_benchmark_data=raw_benchmark_data,
+            cache_path=cache_path,
+            run_start_str=run_start_str,
+            analysis_type=analysis_type,
+            schema=schema,
+            n_bootstraps=n_bootstraps,
+            output_suffix=EI_ARCHITECTURE_POOLED_OUTPUT_SUFFIX,
+        )

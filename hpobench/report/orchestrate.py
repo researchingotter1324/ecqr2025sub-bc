@@ -755,7 +755,8 @@ def run_and_analyze_ei_architecture_benchmark(
     """Run benchmark with EI-based configurations and produce the EI architecture tri-plot.
 
     The tuning configurations must share exactly one EI sampler across multiple
-    estimator architectures; this is enforced downstream in the analysis step.
+    estimator architectures. Conformalized and unconformalized preconformal-trial
+    counterparts are ranked separately and then together in the analysis step.
     """
     experiment_configs = load_experiment_configs(
         benchmarks=benchmarks,
