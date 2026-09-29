@@ -1,0 +1,15 @@
+benchmark_identifier,dataset,tuner,sampler,confidence_level,estimator_architecture,sampler_n_quantiles,sampler_adapter,tuner_searcher_tuning_framework,n_pre_conformal_trials,runtime,rank,best_performance
+lcbench,3945.0,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,257,2.0,-83.3992
+lcbench,3945.0,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,258,1.0,-91.3902
+lcbench,3945.0,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,259,1.0,-91.3902
+lcbench,3945.0,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,257,1.0,-89.9583
+lcbench,3945.0,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,258,2.0,-89.9583
+lcbench,3945.0,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,259,2.0,-89.9583
+lcbench,7593.0,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,250,2.0,-89.7641
+lcbench,7593.0,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,251,1.5,-91.2145
+lcbench,7593.0,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,250,1.0,-91.2145
+lcbench,7593.0,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,251,1.5,-91.2145
+nahs201,cifar10,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,50,1.0,-84.0319
+nahs201,cifar10,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,50,2.0,-79.0829
+nahs201,imagenet,QGBM tuner 1,TS,0.2,QGBM,4.0,DtACI,,32.0,47,1.0,-86.4521
+nahs201,imagenet,QGBM tuner 2,TS,0.2,QGBM,4.0,DtACI,,32.0,47,2.0,-77.4891
